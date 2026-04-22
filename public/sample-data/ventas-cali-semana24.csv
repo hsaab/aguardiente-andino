@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Cali Sur,Supermarket,Cali,118,135,4,Top Shelf,Blanco del Valle,900000
+Carulla Cali Norte,Supermarket,Cali,98,112,6,Bottom Shelf,Blanco del Valle,800000
+Tienda San Fernando,Corner Store,Cali,28,34,3,Back Counter,Blanco del Valle,1100000
+Bar La Topa Tolondra,Bar,Cali,58,72,2,Top Shelf,Blanco del Valle,220000

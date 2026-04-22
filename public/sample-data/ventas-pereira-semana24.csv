@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Pereira,Supermarket,Pereira,108,92,3,Top Shelf,Cristal,450000
+Bar El Gallo,Bar,Pereira,72,54,1,Eye-level,Cristal,140000
+Bar Azul Azul,Bar,Pereira,64,48,1,Eye-level,Cristal,160000
+Restaurante El Mirador,Restaurant,Pereira,52,44,2,Top Shelf,Cristal,220000

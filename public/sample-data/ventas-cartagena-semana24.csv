@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Bocagrande,Supermarket,Cartagena,128,124,2,Top Shelf,Cristal,700000
+Bar Café del Mar,Bar,Cartagena,91,82,1,Eye-level,Cristal,380000
+Bar Havana Cartagena,Bar,Cartagena,74,69,2,Eye-level,Cristal,220000
+Restaurante Carmen,Restaurant,Cartagena,58,51,1,Eye-level,Blanco del Valle,320000

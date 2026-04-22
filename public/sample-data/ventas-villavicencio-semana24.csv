@@ -1,0 +1,6 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Villavicencio,Supermarket,Villavicencio,158,118,2,Eye-level,Cristal,550000
+Olímpica Villavicencio,Supermarket,Villavicencio,112,92,3,Eye-level,Cristal,380000
+Bar Amarillo Azul y Rojo,Bar,Villavicencio,88,64,1,Eye-level,Cristal,220000
+Restaurante Los Capachos,Restaurant,Villavicencio,72,58,2,Eye-level,Cristal,280000
+Tienda Caney,Corner Store,Villavicencio,44,36,1,Eye-level,Cristal,180000

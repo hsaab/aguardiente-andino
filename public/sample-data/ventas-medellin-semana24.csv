@@ -1,0 +1,6 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Poblado,Supermarket,Medellín,192,158,2,Eye-level,Nariño,1000000
+Carulla Poblado,Supermarket,Medellín,178,139,3,Eye-level,Antioqueño,900000
+Bar El Tibirí,Bar,Medellín,94,78,1,Eye-level,Néctar,200000
+Tienda Don Berna,Corner Store,Medellín,48,41,1,Eye-level,Cristal,180000
+Restaurante El Cielo,Restaurant,Medellín,68,58,1,Eye-level,Blanco del Valle,350000

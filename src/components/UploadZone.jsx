@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { parseCsv, loadSampleCsv } from '../lib/csv.js';
+import { parseCsvFiles, loadSampleCsvFiles } from '../lib/csv.js';
 import { useStrings } from '../i18n/strings.js';
 
 /**
- * Drag-and-drop + file picker for the weekly CSV.
+ * Drag-and-drop + file picker for the weekly CSVs. Accepts one or many files
+ * at once — one per rep, region, or distributor — and shows per-file status.
  * Also exposes a "Use sample data" link for a zero-friction demo path.
  */
 export default function UploadZone({ lang, onLoaded }) {
@@ -13,33 +14,57 @@ export default function UploadZone({ lang, onLoaded }) {
   const [isDragging, setDragging] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [busyCount, setBusyCount] = useState(0);
 
-  const handleFile = useCallback(
-    async (file) => {
+  // Convert a FileList (or array) into the `{ name, source }` tuples that
+  // parseCsvFiles expects. Filters out non-CSV mimetypes defensively.
+  const toInputs = (fileList) =>
+    [...fileList]
+      .filter((f) => /\.csv$/i.test(f.name) || f.type === 'text/csv' || f.type === '')
+      .map((f) => ({ name: f.name, source: f }));
+
+  const handleFiles = useCallback(
+    async (fileList) => {
+      const inputs = toInputs(fileList);
+      if (!inputs.length) {
+        setError(lang === 'es' ? 'Sólo archivos CSV son aceptados.' : 'Only CSV files are accepted.');
+        return;
+      }
       setError(null);
       setBusy(true);
+      setBusyCount(inputs.length);
       try {
-        const { rows } = await parseCsv(file);
-        onLoaded(rows);
+        const result = await parseCsvFiles(inputs);
+        // Aggregate errors: if ALL files failed, surface a clear message.
+        const anyRows = result.rows.length > 0;
+        if (!anyRows) {
+          const first = result.files.find((f) => f.error);
+          setError(first?.error ?? 'No valid rows found across the uploaded files.');
+          return;
+        }
+        onLoaded(result);
       } catch (err) {
         setError(err.message || String(err));
       } finally {
         setBusy(false);
+        setBusyCount(0);
       }
     },
-    [onLoaded]
+    [lang, onLoaded]
   );
 
   const handleSample = useCallback(async () => {
     setError(null);
     setBusy(true);
+    setBusyCount(10);
     try {
-      const { rows } = await loadSampleCsv();
-      onLoaded(rows);
+      const result = await loadSampleCsvFiles();
+      onLoaded(result);
     } catch (err) {
       setError(err.message || String(err));
     } finally {
       setBusy(false);
+      setBusyCount(0);
     }
   }, [onLoaded]);
 
@@ -47,10 +72,10 @@ export default function UploadZone({ lang, onLoaded }) {
     (e) => {
       e.preventDefault();
       setDragging(false);
-      const file = e.dataTransfer?.files?.[0];
-      if (file) handleFile(file);
+      const files = e.dataTransfer?.files;
+      if (files && files.length) handleFiles(files);
     },
-    [handleFile]
+    [handleFiles]
   );
 
   return (
@@ -93,10 +118,11 @@ export default function UploadZone({ lang, onLoaded }) {
           ref={inputRef}
           type="file"
           accept=".csv,text/csv"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFile(file);
+            const files = e.target.files;
+            if (files && files.length) handleFiles(files);
             e.target.value = '';
           }}
         />
@@ -119,7 +145,7 @@ export default function UploadZone({ lang, onLoaded }) {
             </svg>
           </div>
           <div className="text-lg font-medium text-charcoal">
-            {busy ? 'Reading file…' : t.uploadHint}
+            {busy ? t.uploadReading(busyCount) : t.uploadHint}
           </div>
           <button
             type="button"

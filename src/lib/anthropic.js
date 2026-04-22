@@ -3,7 +3,11 @@ import { SYSTEM_PROMPT, buildUserPrompt } from '../prompts/weeklyBriefing.js';
 import { validateBriefing } from './briefingSchema.js';
 
 const MODEL = 'claude-sonnet-4-6';
-const MAX_TOKENS = 4096;
+// The briefing is bilingual (en+es) across ~6 sections plus a per-account
+// chart_data array, so 4K output tokens was routinely getting truncated
+// mid-JSON. 16K leaves generous headroom without approaching Sonnet's
+// per-request output ceiling.
+const MAX_TOKENS = 16000;
 
 let clientSingleton = null;
 
@@ -37,6 +41,15 @@ export async function generateBriefing(rows) {
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userPrompt }],
   });
+
+  // If the model hit the output cap, the JSON is almost certainly truncated.
+  // Surface a clear message instead of a misleading "Unterminated string" error.
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(
+      `Model response was truncated at max_tokens=${MAX_TOKENS}. ` +
+        `Raise MAX_TOKENS in src/lib/anthropic.js or reduce input size.`
+    );
+  }
 
   const text = extractText(response);
   const briefing = validateBriefing(parseJson(text));

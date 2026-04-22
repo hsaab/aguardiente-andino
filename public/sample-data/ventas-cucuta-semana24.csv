@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Cúcuta,Supermarket,Cúcuta,84,76,3,Top Shelf,Antioqueño,450000
+Carulla Ceiba,Supermarket,Cúcuta,52,72,4,Bottom Shelf,Antioqueño,600000
+Bar Malecón,Bar,Cúcuta,58,48,2,Eye-level,Cristal,160000
+Tienda Quinta Bosch,Corner Store,Cúcuta,29,26,2,Top Shelf,Antioqueño,150000

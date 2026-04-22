@@ -1,0 +1,6 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Chapinero,Supermarket,Bogotá,187,142,3,Eye-level,Antioqueño,1200000
+Carulla Cedritos,Supermarket,Bogotá,72,168,2,Bottom Shelf,Antioqueño,600000
+Tienda Don Pepe,Corner Store,Bogotá,22,37,11,Back Counter,Antioqueño,1800000
+Tienda El Paisa Bogotá,Corner Store,Bogotá,18,29,5,Back Counter,Nariño,1500000
+Bar La Puerta Falsa,Bar,Bogotá,89,64,1,Eye-level,Nariño,150000

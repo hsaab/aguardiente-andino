@@ -10,7 +10,7 @@ import { useStrings } from './i18n/strings.js';
 import { generateBriefing } from './lib/anthropic.js';
 import { isDemoCachedMode, isDemoSeedMode, loadBriefing, saveBriefing } from './lib/cache.js';
 import { downloadPdf, getLogoDataUrl } from './lib/pdf.js';
-import { loadSampleCsv } from './lib/csv.js';
+import { loadSampleCsvFiles } from './lib/csv.js';
 import { DEMO_BRIEFING } from './demo/fixture.js';
 import useKeyboardShortcut from './hooks/useKeyboardShortcut.js';
 import useIdleCursor from './hooks/useIdleCursor.js';
@@ -24,6 +24,7 @@ export default function App() {
   const [currency, setCurrency] = useState('COP');
   const [stage, setStage] = useState('upload');
   const [rows, setRows] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState(null);
   const [briefing, setBriefing] = useState(null);
   const [isCached, setIsCached] = useState(false);
   const [error, setError] = useState(null);
@@ -44,8 +45,9 @@ export default function App() {
     if (!source) return;
     (async () => {
       try {
-        const { rows: sampleRows } = await loadSampleCsv();
+        const { rows: sampleRows, files } = await loadSampleCsvFiles();
         setRows(sampleRows);
+        setUploadedFiles(files);
         setStage('generating');
         await new Promise((r) => setTimeout(r, seed ? 2800 : 4200));
         setBriefing(source);
@@ -57,13 +59,15 @@ export default function App() {
     })();
   }, []);
 
-  const handleLoaded = useCallback((parsedRows) => {
+  const handleLoaded = useCallback(({ rows: parsedRows, files }) => {
     setRows(parsedRows);
+    setUploadedFiles(files);
     setStage('preview');
   }, []);
 
   const handleReset = useCallback(() => {
     setRows(null);
+    setUploadedFiles(null);
     setBriefing(null);
     setIsCached(false);
     setError(null);
@@ -141,6 +145,7 @@ export default function App() {
               <DataPreview
                 key="preview"
                 rows={rows}
+                files={uploadedFiles}
                 lang={lang}
                 currency={currency}
                 onGenerate={handleGenerate}

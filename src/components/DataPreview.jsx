@@ -8,10 +8,13 @@ import { useStrings } from '../i18n/strings.js';
  * Preview the first 5 rows of parsed data, show top-line stats, and
  * host the primary "Generate briefing" CTA.
  */
-export default function DataPreview({ rows, lang, currency, onGenerate, onReset }) {
+export default function DataPreview({ rows, files, lang, currency, onGenerate, onReset }) {
   const t = useStrings(lang);
   const stats = useMemo(() => summarize(rows), [rows]);
   const sample = rows.slice(0, 5);
+  const fileCount = files?.length ?? 0;
+  // Only surface chip row when multi-file (adds no signal for single-file case).
+  const showFileChips = fileCount > 1;
 
   return (
     <motion.section
@@ -25,13 +28,24 @@ export default function DataPreview({ rows, lang, currency, onGenerate, onReset 
         <div>
           <span className="eyebrow">{t.previewTitle}</span>
           <h2 className="mt-3 font-display text-4xl font-semibold text-charcoal">
-            {t.previewSubtitle(stats.accounts, stats.regions)}
+            {t.previewSubtitle(stats.accounts, stats.regions, fileCount)}
           </h2>
         </div>
         <button onClick={onReset} className="btn-ghost">
           {t.previewReupload}
         </button>
       </div>
+
+      {showFileChips && (
+        <div className="mt-6">
+          <div className="eyebrow mb-3">{t.filesLoaded(fileCount)}</div>
+          <div className="flex flex-wrap gap-2">
+            {files.map((f) => (
+              <FileChip key={f.name} file={f} lang={lang} t={t} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
@@ -102,6 +116,28 @@ export default function DataPreview({ rows, lang, currency, onGenerate, onReset 
         </button>
       </div>
     </motion.section>
+  );
+}
+
+function FileChip({ file, t }) {
+  const hasError = Boolean(file.error);
+  const classes = hasError
+    ? 'border-danger/30 bg-danger/5 text-danger'
+    : 'border-emerald-800/20 bg-emerald-50 text-emerald-900';
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${classes}`}
+      title={hasError ? t.fileError(file.error) : undefined}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${hasError ? 'bg-danger' : 'bg-emerald-700'}`}
+        aria-hidden
+      />
+      <span className="font-mono text-[11px]">{file.name}</span>
+      <span className="text-charcoal/60">
+        {hasError ? t.fileError(file.error) : t.fileRowCount(file.rowCount)}
+      </span>
+    </span>
   );
 }
 

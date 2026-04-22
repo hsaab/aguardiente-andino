@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Cabecera,Supermarket,Bucaramanga,112,98,3,Top Shelf,Antioqueño,500000
+Carulla Cañaveral,Supermarket,Bucaramanga,68,94,5,Bottom Shelf,Antioqueño,700000
+Bar Mercagán,Bar,Bucaramanga,78,62,1,Eye-level,Néctar,180000
+Tienda El Prado,Corner Store,Bucaramanga,34,29,2,Top Shelf,Antioqueño,200000

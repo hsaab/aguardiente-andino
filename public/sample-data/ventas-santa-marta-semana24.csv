@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Santa Marta,Supermarket,Santa Marta,98,88,3,Top Shelf,Nariño,400000
+Restaurante Ouzo,Restaurant,Santa Marta,62,51,1,Eye-level,Nariño,280000
+Bar La Puerta,Bar,Santa Marta,68,58,2,Eye-level,Cristal,200000
+Tienda El Rodadero,Corner Store,Santa Marta,32,28,1,Top Shelf,Nariño,120000

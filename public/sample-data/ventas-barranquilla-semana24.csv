@@ -1,0 +1,5 @@
+account_name,account_type,region,bottles_sold_this_week,bottles_sold_last_week,returns_this_week,shelf_position,top_competitor_on_shelf,promo_spend_cop
+Éxito Barranquilla,Supermarket,Barranquilla,132,118,3,Top Shelf,Nariño,600000
+Bar La Troja,Bar,Barranquilla,82,76,2,Eye-level,Nariño,250000
+Bar Frogg,Bar,Barranquilla,67,71,3,Top Shelf,Cristal,300000
+Restaurante Cucayo,Restaurant,Barranquilla,44,41,2,Top Shelf,Nariño,220000
