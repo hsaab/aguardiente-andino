@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT, buildUserPrompt } from '../prompts/weeklyBriefing.js';
 import { validateBriefing } from './briefingSchema.js';
 
-const MODEL = 'claude-sonnet-4-5';
+const MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 4096;
 
 let clientSingleton = null;
@@ -68,7 +68,7 @@ function parseJson(text) {
 }
 
 function logUsage({ input_tokens = 0, output_tokens = 0 }) {
-  // Pricing (USD per 1M tokens) for claude-sonnet-4-5. Keep in sync if updated.
+  // Pricing (USD per 1M tokens) for claude-sonnet-4-6. Keep in sync if updated.
   const INPUT_PER_M = 3.0;
   const OUTPUT_PER_M = 15.0;
   const cost = (input_tokens * INPUT_PER_M + output_tokens * OUTPUT_PER_M) / 1_000_000;

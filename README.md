@@ -1,21 +1,22 @@
 # Aguardiente Andino — Weekly Sales Intelligence
 
 A live demo app built for the **AI Summit Colombia** keynote stage. Upload a
-weekly sales CSV, click **Generate**, and watch Claude Sonnet 4.5 turn raw
+weekly sales CSV, click **Generate**, and watch Claude Sonnet 4.6 turn raw
 spreadsheet rows into a polished, bilingual (EN / ES) executive briefing —
 complete with growth charts and a one-click PDF export.
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind-3-38BDF8?logo=tailwindcss&logoColor=white)
-![Claude](https://img.shields.io/badge/Claude-Sonnet%204.5-D97757)
+![Claude](https://img.shields.io/badge/Claude-Sonnet%204.6-D97757)
 
 ---
 
 ## Features
 
 - **CSV → Briefing in one click.** Drag-and-drop a weekly sales CSV and Claude
-  returns a structured, multi-section briefing grounded in the actual numbers.
+  Sonnet 4.6 returns a structured, multi-section briefing grounded in the
+  actual numbers.
 - **Bilingual by design.** Every narrative field is emitted in both English and
   Colombian Spanish; toggle the language at any time without re-hitting the API.
 - **Currency toggle.** Switch between COP and USD on the fly (FX handled
@@ -123,7 +124,7 @@ A working example lives at `public/sample-data.csv`.
 
 ## Cost
 
-Claude Sonnet 4.5 pricing: **$3/M input, $15/M output tokens**. Each generation
+Claude Sonnet 4.6 pricing: **$3/M input, $15/M output tokens**. Each generation
 uses roughly 2–3k input + 1–2k output tokens (doubled because the briefing is
 emitted in both languages in a single call).
 
