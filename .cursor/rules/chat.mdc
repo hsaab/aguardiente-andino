@@ -5,7 +5,7 @@ alwaysApply: false
 
 # Adding Chat to the Briefing Page
 
-A chat feature that answers questions grounded on the rendered briefing. This is a live-demo build — stay inside this recipe. No drawers, no portals, no floating widgets.
+A chat feature that answers questions grounded on the rendered briefing. This is a live-demo build — stay inside this recipe. No drawers, no portals, no floating widgets. The UI should feel like a first-class section of the report, not a bolted-on widget.
 
 ## Placement — non-negotiable
 
@@ -23,13 +23,10 @@ A chat feature that answers questions grounded on the rendered briefing. This is
   - `messages`: `Array<{ role: 'user' | 'assistant', content: string }>`
   - `input`: string
   - `pending`: boolean
-- Render inside a `<SectionCard eyebrow={…} accent="emerald">`:
-  - A message list with user messages aligned right on a light `bg-emerald-50` / `bg-charcoal/5` bubble, assistant messages aligned left on transparent/`bg-cream` with `border-charcoal/10`. Use `rounded-xl p-4 text-base leading-relaxed`.
-  - A form with a `<textarea>` (auto-grow is fine but not required) and a primary submit button using the existing `.btn-primary` class.
-  - While `pending`, disable the textarea and button, and show a 3-dot pulse using `animate-pulse` — **not** a full skeleton, **not** a typewriter.
+- Render inside `<SectionCard eyebrow={…} accent="emerald">` following the [Visual polish](#visual-polish) spec below.
 - On submit: push the user message, call `askBriefing(...)`, push the assistant reply. If the call throws, append an assistant message with an inline error string styled the same as a normal assistant message (no `throw`, no red banner, no `window.alert`).
-- Auto-scroll the message list to the bottom on new messages using `useEffect` + a `ref` on the list container.
-- Empty state: a short suggestion strip with 2–3 example questions that populate the textarea when clicked. Localize via `briefing.language`.
+- Auto-scroll the message list to the bottom on new messages using `useEffect` + a `ref` on the list container. Use `el.scrollTop = el.scrollHeight` inside a `requestAnimationFrame` so it runs after layout.
+- Empty state: friendly prompt copy + 2–3 clickable suggestion chips that populate the textarea. Localize via `briefing.language`.
 
 ### `src/lib/briefingChat.js`
 
@@ -43,24 +40,106 @@ export async function askBriefing({ briefing, history, question }) { … }
 - Call `client.messages.create` (non-stream). Do not stream for v1 — the `streaming.mdc` rule can be layered on later.
 - Model: `'claude-sonnet-4-6'`. `max_tokens`: `1024`.
 - System prompt: a short string that embeds `JSON.stringify(briefing)` inside a clearly-delimited block, and instructs the model to:
-  - Answer **only** from the briefing JSON. If the answer is not in the data, say so politely.
+  - Answer **only** from the briefing JSON. If the answer is not in the data, say so politely in one short sentence.
   - Reply in the language indicated by `briefing.language` (`'en'` or `'es'`). Colombian Spanish if `'es'`.
-  - Keep answers to ≤ 3 short paragraphs. No markdown headings.
   - Never invent accounts, numbers, or competitors that are not in the JSON.
+  - Format for a glanceable chat bubble:
+    - Whole reply under ~120 words. No preamble ("Based on the briefing…"), no filler.
+    - Start with ONE short lead sentence (≤ ~20 words) that answers the question.
+    - When listing two or more items, use bullets. Each bullet on its own line, starts with `- `, single short line (≤ ~18 words), account + hard number up front (e.g. `- Bar La Puerta (Medellín): -28% WoW, 14 returns`). Prefer 2–5 bullets over a paragraph.
+    - Separate the lead sentence from the bullets with one blank line.
+    - No markdown headings (`#`, `##`). No bold/italics. No tables. No emojis.
 - `messages`: map `history` to `{ role, content }` pairs + the latest `{ role: 'user', content: question }`. Plain text content, no content blocks with images or tool use.
 - Return the assistant text (string). Extract from `response.content.find(b => b.type === 'text')?.text`.
 - On `stop_reason === 'max_tokens'`, still return the partial text — do not throw (the chat should degrade gracefully).
 - Log token usage via the same `[anthropic]` console line format used in `src/lib/anthropic.js` if that helper is exported; otherwise skip logging.
 
+## Visual polish
+
+The chat must feel as considered as the rest of the briefing. Use existing Tailwind tokens (`charcoal`, `cream`, `emerald-*`, `gold-*`, `muted`) and existing primitives (`SectionCard`, `.btn-primary`). No new npm deps; no markdown libs.
+
+### Layout
+
+- Inside the `SectionCard`, use a vertical stack: message list → composer. Gap `gap-6`. Card inherits its own padding; do not re-pad the card.
+- Message list:
+  - `max-h-[min(28rem,55vh)] overflow-y-auto pr-1 space-y-5` so long threads scroll inside the card.
+  - Custom scrollbar is optional; if added, style with Tailwind arbitrary variants (no CSS file).
+  - `aria-live="polite"` on the list container; individual messages do not need their own live region.
+
+### Messages
+
+- Each message is a flex row aligned right (`justify-end`) for `user`, left (`justify-start`) for `assistant`.
+- Small role avatar (`h-7 w-7 rounded-full shrink-0`) beside the bubble, **outside** it:
+  - User avatar: `bg-charcoal text-cream` with initials `YOU` / `TÚ` (11px, semibold, centered).
+  - Assistant avatar: `bg-emerald-800 text-cream` with a 14px inline SVG sparkle / spark icon (hand-rolled, no icon library). Keep it the same icon the rest of the app uses if available.
+  - On mobile the avatar can be hidden (`hidden sm:flex`) to save width.
+- Bubble (`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-base leading-relaxed whitespace-pre-wrap`):
+  - User: `bg-emerald-50 text-charcoal shadow-sm ring-1 ring-emerald-900/5`. Tail: on the right side, swap one corner with `rounded-br-md` so the bubble points to the user avatar.
+  - Assistant: `bg-cream text-charcoal ring-1 ring-charcoal/10`. Tail: `rounded-bl-md`.
+- Assistant messages render through `AssistantMessage` (see below). User messages render `whitespace-pre-wrap` text only.
+- Space between bubble and avatar: `gap-3`.
+- Message-to-message spacing comes from `space-y-5` on the list; no extra margins.
+
+### Assistant message formatter (zero-dep, keep private)
+
+- Split the reply into paragraph and bullet-list blocks:
+  - Blank lines → paragraph break.
+  - Lines starting with `-`, `*`, or `•` → a single `<ul class="list-disc pl-5 space-y-1.5 marker:text-emerald-800">`.
+  - Consecutive paragraphs use `space-y-3`.
+- **No** markdown renderer, **no** bold/italics, **no** headings, **no** code blocks.
+- First paragraph of the first assistant message in a thread can use `font-medium text-charcoal` to emphasize the lead sentence; subsequent paragraphs stay regular weight.
+
+### Typing indicator (while `pending`)
+
+- Aligned left like an assistant bubble, same bubble styling (`bg-cream ring-1 ring-charcoal/10 rounded-2xl rounded-bl-md px-4 py-3`).
+- Three 8px dots inside a flex row with `gap-1.5`, `bg-charcoal/35 rounded-full`. Animate with staggered `animate-pulse` by applying `[animation-delay:0ms|150ms|300ms]` via arbitrary Tailwind variants. **Not** a full skeleton, **not** a typewriter.
+- `aria-hidden="true"` on the dots; the textarea's disabled state signals pending to assistive tech.
+
+### Empty state
+
+- Shown only when `messages.length === 0`.
+- Small eyebrow-style line (`text-xs uppercase tracking-[0.18em] text-muted`) above the chip row, e.g. `Try`, `Prueba`.
+- 2–3 suggestion chips wrapped with `flex flex-wrap gap-2`. Chip styling:
+  - `rounded-full border border-charcoal/15 bg-cream px-3.5 py-1.5 text-sm text-charcoal/90`
+  - Hover: `hover:bg-charcoal/5 hover:border-charcoal/25 transition-colors`
+  - Focus: `focus:outline-none focus:ring-2 focus:ring-emerald-800/30`
+  - Disabled while `pending`: `disabled:opacity-50`
+- Clicking a chip sets the textarea value and focuses the textarea.
+
+### Composer
+
+- Form row: `flex flex-col gap-3 sm:flex-row sm:items-end`.
+- Textarea:
+  - `flex-1 rounded-xl border border-charcoal/15 bg-white px-4 py-3 text-base text-charcoal placeholder:text-muted resize-y min-h-[3rem]`
+  - Focus: `focus:outline-none focus:ring-2 focus:ring-emerald-800/30 focus:border-emerald-800/40`
+  - Disabled: `disabled:opacity-60 disabled:cursor-not-allowed`
+  - Accepts Enter to submit, Shift+Enter for newline (implement via `onKeyDown`). Do not add a separate keyboard-shortcut hint UI.
+  - Has an associated `<label className="sr-only">` for accessibility.
+- Send button: existing `.btn-primary` class + a leading paper-plane / arrow SVG icon (hand-rolled, 16px, `stroke-current`). Label from `i18n/strings.js`. Disabled when `pending || !input.trim()`.
+- Character counter or model metadata: do **not** add.
+
+### Motion
+
+- On first mount of the chat card, let the parent `BriefingView` stagger handle the entry — do not add a new `motion.*` here.
+- New messages can fade/slide in with a tiny `framer-motion` animation (existing dep): `initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}`. Apply to the outer row `div`, not the bubble. Skip this animation for the initial render pass if the list was already populated (avoid a burst on first paint).
+
+### Accessibility
+
+- The list container gets `role="log"` + `aria-live="polite"`.
+- Each bubble's outer `div` gets a `role` of `"article"` or no role; keep it simple.
+- Suggestion chips are real `<button type="button">` elements.
+- The send button has `type="submit"`; Enter submits the form.
+
 ## Wiring
 
 - In `src/components/BriefingView.jsx`, import `BriefingChat` and render `<BriefingChat briefing={briefing} />` **once**, inside a `<div className="mt-10">` at the bottom of the `motion.section`, right after the `GrowthChart` block.
+- If the streaming rule is also in effect, gate rendering on `!isStreaming` so the first message is never sent with a still-growing partial briefing.
 - Do not pass chat state to `App.jsx`. The chat is self-contained.
 - Do not modify `handleDownloadPdf`, the PDF button's disabled condition, or the download UI.
 
 ## Hard constraints
 
-- **No new npm dependencies.** No markdown renderer, no `react-markdown`, no virtualization, no `react-query`, no state library.
+- **No new npm dependencies.** No markdown renderer, no `react-markdown`, no virtualization, no `react-query`, no state library, no icon library (`lucide-react`, `heroicons`, etc.).
 - **No routing changes.** Do not add a new route or URL param.
 - **No global state.** No React context, no Zustand, no Redux.
 - **No tool use, no JSON mode, no structured outputs.** Plain text replies only.
@@ -69,11 +148,15 @@ export async function askBriefing({ briefing, history, question }) { … }
 - Do not add a language toggle inside the chat — follow `briefing.language`.
 - Do not gate PDF export, the reset button, or the regenerate banner on chat state.
 - Do not reuse `isStreaming` or `partialBriefing` from `App.jsx`; the chat has its own local `pending` state.
+- Do not introduce dark-mode classes; the rest of the app is light-mode only.
+- Do not inline SVGs > ~20 lines — keep icons small and hand-rolled.
 
 ## Acceptance check
 
 - With `?demo=seed`, open the briefing view → scroll to the bottom → chat card is visible below the chart → asking "Which account declined the most?" returns an answer grounded in `bottom_decliners`.
 - With `?demo=seed` in Spanish, the answer comes back in Colombian Spanish.
 - Asking an unrelated question ("What's the weather in Medellín?") triggers the polite refusal described in the system prompt.
+- UI check: avatars render for both roles, bubbles have distinct but coherent styling with the rest of the report, suggestion chips are rounded and hover/focus correctly, the typing indicator shows three staggered dots, and the composer has a visible focus ring in emerald.
+- Enter submits, Shift+Enter inserts a newline.
 - PDF download still works and is not blocked by chat activity.
-- `npm run build` succeeds.
+- `npm run build` and `npm run lint` succeed (no new lint errors).
