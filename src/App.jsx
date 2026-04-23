@@ -11,13 +11,17 @@ import { generateBriefing } from './lib/anthropic.js';
 import { isDemoCachedMode, isDemoSeedMode, loadBriefing, saveBriefing } from './lib/cache.js';
 import { downloadPdf, getLogoDataUrl } from './lib/pdf.js';
 import { loadSampleCsvFiles } from './lib/csv.js';
-import { DEMO_BRIEFING } from './demo/fixture.js';
+import { pickDemoBriefing } from './demo/fixture.js';
 import useKeyboardShortcut from './hooks/useKeyboardShortcut.js';
 import useIdleCursor from './hooks/useIdleCursor.js';
 
 /**
  * Top-level stage machine: upload -> preview -> generating -> briefing
- * Also owns language, currency, and cached-mode behaviour.
+ *
+ * The briefing now streams in: as soon as the model emits enough text for
+ * the partial JSON parser to extract a summary, we transition straight to
+ * the briefing view and let later sections fill in. There is no artificial
+ * minimum wait.
  */
 export default function App() {
   const [lang, setLang] = useState('en');
@@ -26,6 +30,8 @@ export default function App() {
   const [rows, setRows] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState(null);
   const [briefing, setBriefing] = useState(null);
+  const [partialBriefing, setPartialBriefing] = useState(null);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
@@ -41,7 +47,7 @@ export default function App() {
     const seed = isDemoSeedMode();
     const cachedMode = isDemoCachedMode();
     if (!seed && !cachedMode) return;
-    const source = seed ? DEMO_BRIEFING : loadBriefing();
+    const source = seed ? pickDemoBriefing(lang) : loadBriefing();
     if (!source) return;
     (async () => {
       try {
@@ -57,6 +63,8 @@ export default function App() {
         console.error('[demo-mode] failed', err);
       }
     })();
+    // Demo modes only run once on mount; ignore lang dep churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLoaded = useCallback(({ rows: parsedRows, files }) => {
@@ -69,39 +77,58 @@ export default function App() {
     setRows(null);
     setUploadedFiles(null);
     setBriefing(null);
+    setPartialBriefing(null);
+    setIsStreaming(false);
     setIsCached(false);
     setError(null);
     setStage('upload');
   }, []);
 
-  const handleGenerate = useCallback(async () => {
-    if (!rows) return;
-    setError(null);
-    setIsCached(false);
-    setStage('generating');
+  const handleGenerate = useCallback(
+    async (reportLang) => {
+      if (!rows) return;
+      const targetLang = reportLang === 'es' ? 'es' : 'en';
+      setError(null);
+      setIsCached(false);
+      setPartialBriefing(null);
+      setIsStreaming(true);
+      setStage('generating');
 
-    // Guarantee a minimum theatrical wait so the loading animation has room
-    // to play fully. The real API call usually takes 3-6s anyway.
-    const minWait = new Promise((r) => setTimeout(r, 3600));
-    try {
-      const [{ briefing: b }] = await Promise.all([generateBriefing(rows), minWait]);
-      setBriefing(b);
-      saveBriefing(b);
-      setStage('briefing');
-    } catch (err) {
-      console.error('[app] generation failed', err);
-      // Fall back to cached briefing if available so the demo never dead-ends.
-      const cached = loadBriefing();
-      if (cached) {
-        setBriefing(cached);
-        setIsCached(true);
-        setStage('briefing');
-      } else {
-        setError(err);
-        setStage('preview');
+      try {
+        const { briefing: b } = await generateBriefing(rows, {
+          lang: targetLang,
+          onPartial: (partial) => {
+            // Promote the user out of LoadingState into the live briefing
+            // view as soon as the streamed JSON has at least a summary
+            // string the user can read. Earlier than that, the partial is
+            // mostly noise.
+            if (partial?.summary && typeof partial.summary === 'string' && partial.summary.length > 12) {
+              setPartialBriefing(partial);
+              setStage('briefing');
+            }
+          },
+        });
+        setBriefing(b);
+        setPartialBriefing(null);
+        saveBriefing(b);
+      } catch (err) {
+        console.error('[app] generation failed', err);
+        // Fall back to cached briefing if available so the demo never dead-ends.
+        const cached = loadBriefing();
+        if (cached) {
+          setBriefing(cached);
+          setIsCached(true);
+          setStage('briefing');
+        } else {
+          setError(err);
+          setStage('preview');
+        }
+      } finally {
+        setIsStreaming(false);
       }
-    }
-  }, [rows]);
+    },
+    [rows]
+  );
 
   const handleDownloadPdf = useCallback(async () => {
     if (!briefing) return;
@@ -111,7 +138,7 @@ export default function App() {
       await downloadPdf(
         <PdfDocument
           briefing={briefing}
-          lang={lang}
+          rows={rows}
           currency={currency}
           logoUrl={logoUrl}
         />,
@@ -122,9 +149,15 @@ export default function App() {
     } finally {
       setDownloading(false);
     }
-  }, [briefing, lang, currency]);
+  }, [briefing, rows, currency]);
 
   useKeyboardShortcut('r', handleReset, { enabled: stage !== 'upload' });
+
+  // The briefing's own language drives the BriefingView, even if the user
+  // toggles the UI language. This keeps the rendered narrative consistent
+  // with what was generated; the regenerate banner offers the swap.
+  const activeBriefing = briefing ?? partialBriefing;
+  const briefingLang = activeBriefing?.language ?? lang;
 
   return (
     <div className="min-h-screen flex flex-col bg-cream">
@@ -155,24 +188,26 @@ export default function App() {
             {stage === 'generating' && (
               <LoadingState key="loading" lang={lang} accountsCount={rows?.length ?? 0} />
             )}
-            {stage === 'briefing' && briefing && (
+            {stage === 'briefing' && activeBriefing && (
               <div key="briefing">
                 <BriefingView
-                  briefing={briefing}
-                  lang={lang}
+                  briefing={activeBriefing}
+                  lang={briefingLang}
                   currency={currency}
                   rows={rows}
                   isCached={isCached}
+                  isStreaming={isStreaming}
+                  onRegenerateLanguage={handleGenerate}
                 />
                 <div className="mt-14 flex flex-wrap items-center justify-center gap-4">
                   <button
                     onClick={handleDownloadPdf}
                     className="btn-primary"
-                    disabled={downloading}
+                    disabled={downloading || isStreaming || !briefing}
                   >
                     <DownloadIcon />
                     {downloading
-                      ? (lang === 'es' ? 'Generando PDF…' : 'Generating PDF…')
+                      ? (briefingLang === 'es' ? 'Generando PDF…' : 'Generating PDF…')
                       : t.downloadPdf}
                   </button>
                   <button onClick={handleReset} className="btn-ghost">

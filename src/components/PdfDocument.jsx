@@ -8,6 +8,8 @@ import {
   View,
 } from '@react-pdf/renderer';
 import { formatInt, formatMoney, formatPct } from '../lib/format.js';
+import { buildChartData } from '../lib/briefingMetrics.js';
+import { normalizeLanguage } from '../lib/briefingSchema.js';
 
 // Bundle Inter + Fraunces from Google Fonts so the PDF looks like the app.
 Font.register({
@@ -124,14 +126,14 @@ const styles = StyleSheet.create({
 });
 
 /**
- * PDF document mirroring the on-screen briefing. All narrative fields use
- * the active language; monetary figures use the active currency.
+ * PDF document mirroring the on-screen briefing. The briefing carries its
+ * own language; chart data is rebuilt deterministically from the input
+ * rows. Monetary figures use the active currency.
  */
-export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
-  const pickText = (obj, baseKey) =>
-    lang === 'es' ? obj[`${baseKey}_es`] ?? obj.es : obj[`${baseKey}_en`] ?? obj.en;
-
-  const summary = lang === 'es' ? briefing.summary.es : briefing.summary.en;
+export default function PdfDocument({ briefing, rows, currency, logoUrl }) {
+  const lang = normalizeLanguage(briefing?.language);
+  const summary = typeof briefing.summary === 'string' ? briefing.summary : '';
+  const chartData = buildChartData(rows);
   const titles =
     lang === 'es'
       ? {
@@ -167,10 +169,7 @@ export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
           perBottle: '/bottle',
         };
 
-  const maxAbs = Math.max(
-    5,
-    ...briefing.chart_data.map((c) => Math.abs(c.wow_pct))
-  );
+  const maxAbs = Math.max(5, ...chartData.map((c) => Math.abs(c.wow_pct)));
 
   return (
     <Document>
@@ -218,7 +217,7 @@ export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
                     </View>
                     <Text style={styles.metricNegative}>{formatPct(d.wow_pct)}</Text>
                   </View>
-                  <Text style={styles.accountNote}>{pickText(d, 'reason')}</Text>
+                  <Text style={styles.accountNote}>{d.reason}</Text>
                 </View>
               ))}
             </View>
@@ -241,7 +240,7 @@ export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
                   <Text style={styles.accountSub}>
                     {th.was_position} → {th.now_position}
                   </Text>
-                  <Text style={styles.accountNote}>{pickText(th, 'note')}</Text>
+                  <Text style={styles.accountNote}>{th.note}</Text>
                 </View>
               ))}
             </View>
@@ -258,7 +257,7 @@ export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
                   <Text style={styles.accountSub}>
                     {formatInt(p.bottles_sold)} {titles.soldOf} · {formatMoney(p.waste_ratio, currency)}{titles.perBottle}
                   </Text>
-                  <Text style={styles.accountNote}>{pickText(p, 'note')}</Text>
+                  <Text style={styles.accountNote}>{p.note}</Text>
                 </View>
               ))}
             </View>
@@ -272,12 +271,8 @@ export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
             <View key={a.priority} style={styles.actionRow}>
               <Text style={styles.actionBadge}>{a.priority}</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.actionTitle}>
-                  {lang === 'es' ? a.title_es : a.title_en}
-                </Text>
-                <Text style={styles.actionDetail}>
-                  {lang === 'es' ? a.detail_es : a.detail_en}
-                </Text>
+                <Text style={styles.actionTitle}>{a.title}</Text>
+                <Text style={styles.actionDetail}>{a.detail}</Text>
               </View>
             </View>
           ))}
@@ -303,15 +298,13 @@ export default function PdfDocument({ briefing, lang, currency, logoUrl }) {
 
         <Text style={styles.eyebrow}>{titles.chart}</Text>
         <Text style={styles.h2}>
-          {briefing.chart_data.length} {lang === 'es' ? 'cuentas' : 'accounts'}
+          {chartData.length} {lang === 'es' ? 'cuentas' : 'accounts'}
         </Text>
 
         <View style={{ marginTop: 6 }}>
-          {[...briefing.chart_data]
-            .sort((a, b) => b.wow_pct - a.wow_pct)
-            .map((c) => (
-              <ChartRow key={c.account} entry={c} maxAbs={maxAbs} />
-            ))}
+          {chartData.map((c) => (
+            <ChartRow key={c.account} entry={c} maxAbs={maxAbs} />
+          ))}
         </View>
 
         <View style={styles.footer} fixed>

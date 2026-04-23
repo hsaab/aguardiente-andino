@@ -48,6 +48,10 @@ export const STRINGS = {
     sold: 'Sold',
     returns: 'Returns',
     bottles: 'bottles',
+    reportLanguage: 'Report language',
+    regenerateInLang: (label) => `Re-generate briefing in ${label}`,
+    languageEn: 'English',
+    languageEs: 'Spanish',
   },
   es: {
     brand: 'Aguardiente Andino',
@@ -97,6 +101,10 @@ export const STRINGS = {
     sold: 'Vendidas',
     returns: 'Devoluciones',
     bottles: 'botellas',
+    reportLanguage: 'Idioma del briefing',
+    regenerateInLang: (label) => `Regenerar briefing en ${label}`,
+    languageEn: 'inglés',
+    languageEs: 'español',
   },
 };
 

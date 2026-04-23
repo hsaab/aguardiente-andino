@@ -1,18 +1,24 @@
 import { motion } from 'framer-motion';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { summarize } from '../lib/csv.js';
-import { formatInt, formatMoney, formatPct, weekOverWeek } from '../lib/format.js';
+import { formatInt, formatMoney, formatMoneyCompact, formatPct, weekOverWeek } from '../lib/format.js';
 import { useStrings } from '../i18n/strings.js';
 
 /**
  * Preview the first 5 rows of parsed data, show top-line stats, and
  * host the primary "Generate briefing" CTA.
+ *
+ * The user picks the briefing language explicitly here so the model only
+ * generates one language (~halving output tokens / latency).
  */
 export default function DataPreview({ rows, files, lang, currency, onGenerate, onReset }) {
   const t = useStrings(lang);
   const stats = useMemo(() => summarize(rows), [rows]);
   const sample = rows.slice(0, 5);
   const fileCount = files?.length ?? 0;
+  // Default the report language to whatever UI language is active. The user
+  // can override before clicking Generate.
+  const [reportLang, setReportLang] = useState(lang);
   // Only surface chip row when multi-file (adds no signal for single-file case).
   const showFileChips = fileCount > 1;
 
@@ -56,7 +62,7 @@ export default function DataPreview({ rows, files, lang, currency, onGenerate, o
         />
         <StatCard
           label={t.spent}
-          value={formatMoney(stats.totalPromo, currency)}
+          value={formatMoneyCompact(stats.totalPromo, currency)}
           sub={`${stats.accounts} ${lang === 'es' ? 'cuentas' : 'accounts'}`}
         />
         <StatCard
@@ -109,13 +115,54 @@ export default function DataPreview({ rows, files, lang, currency, onGenerate, o
         </div>
       </div>
 
-      <div className="mt-10 flex justify-center">
-        <button onClick={onGenerate} className="btn-gold">
+      <div className="mt-10 flex flex-col items-center gap-4">
+        <ReportLanguagePicker
+          label={t.reportLanguage}
+          value={reportLang}
+          onChange={setReportLang}
+        />
+        <button onClick={() => onGenerate(reportLang)} className="btn-gold">
           <SparkleIcon />
           {t.generate}
         </button>
       </div>
     </motion.section>
+  );
+}
+
+function ReportLanguagePicker({ label, value, onChange }) {
+  const options = [
+    { value: 'en', label: 'EN' },
+    { value: 'es', label: 'ES' },
+  ];
+  return (
+    <div className="flex items-center gap-3">
+      <span className="eyebrow text-muted">{label}</span>
+      <div
+        role="group"
+        aria-label={label}
+        className="inline-flex rounded-lg border border-charcoal/10 bg-surface p-1 shadow-card"
+      >
+        {options.map((opt) => {
+          const active = opt.value === value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              className={[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
+                active
+                  ? 'bg-emerald-800 text-white shadow-sm'
+                  : 'text-muted hover:text-charcoal',
+              ].join(' ')}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

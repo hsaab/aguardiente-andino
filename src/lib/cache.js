@@ -1,7 +1,10 @@
 // Minimal localStorage cache for the most recent briefing.
 // Used by the ?demo=cached URL param as a keynote-safe fallback.
 
-const KEY = 'aguardiente.lastBriefing.v1';
+// v2: single-language flat-string briefing shape (no chart_data echoed by
+// the model). Bumping the key drops any v1 bilingual blob so the renderer
+// never has to defend against the old shape.
+const KEY = 'aguardiente.lastBriefing.v2';
 
 export function saveBriefing(briefing) {
   try {

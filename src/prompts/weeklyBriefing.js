@@ -1,4 +1,4 @@
-import { JSON_SHAPE_DESCRIPTION } from '../lib/briefingSchema.js';
+import { JSON_SHAPE_DESCRIPTION, normalizeLanguage } from '../lib/briefingSchema.js';
 
 export const SYSTEM_PROMPT = `
 You are the Chief of Staff to the founder of Aguardiente Andino, a new Colombian
@@ -13,8 +13,9 @@ that helps the founder decide where to spend their time and promo budget this
 week.
 
 Language requirements:
-- Provide every narrative field in BOTH English (en) and Colombian Spanish (es).
-- Spanish should use Colombian regionalisms where natural (e.g. "visitar
+- Write every narrative field in the SINGLE language specified in the user
+  prompt. Do not translate. Do not add a second-language version.
+- For Spanish, use Colombian regionalisms where natural (e.g. "visitar
   personalmente", "la góndola", "este fin de semana"). Avoid neutral
   pan-LATAM Spanish.
 - Account names, regions, and competitor names stay in their original form.
@@ -27,9 +28,24 @@ Numeracy requirements:
 ${JSON_SHAPE_DESCRIPTION}
 `.trim();
 
-export function buildUserPrompt(rows) {
+const LANGUAGE_DIRECTIVES = {
+  en: 'Write every narrative string in clear, direct English. Do not include any Spanish translations.',
+  es: 'Escriba cada cadena narrativa en español colombiano directo. No incluya traducciones al inglés.',
+};
+
+/**
+ * Build the per-call user prompt.
+ *
+ * @param {Array<object>} rows — parsed CSV rows
+ * @param {'en'|'es'} lang — target language for narrative fields
+ */
+export function buildUserPrompt(rows, lang = 'en') {
+  const targetLang = normalizeLanguage(lang);
+  const directive = LANGUAGE_DIRECTIVES[targetLang];
   const csv = toCsv(rows);
   return `
+${directive}
+
 Here is this week's sell-through data for all ${rows.length} accounts.
 
 \`\`\`csv
