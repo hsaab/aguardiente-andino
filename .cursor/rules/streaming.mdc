@@ -1,0 +1,100 @@
+---
+description: Exact recipe for adding streaming to the briefing generation. Apply whenever the user asks to stream the model output, show tokens as they arrive, progressive rendering, live generation, or adds streaming to src/lib/anthropic.js or src/App.jsx.
+alwaysApply: false
+---
+
+# Adding Streaming to Briefing Generation
+
+The app currently awaits the full briefing before rendering. To re-add streaming, follow this exact recipe — no variations. This is a live-demo feature; ambiguity is unacceptable.
+
+## Required shape
+
+### 1. `src/lib/anthropic.js`
+
+- Add `import { parse as parsePartialJson } from 'partial-json';` — the dep is already in `package.json`.
+- Change the signature to `generateBriefing(rows, { lang = 'en', onPartial } = {})`.
+- Replace `client.messages.create` with `client.messages.stream` — same `model`, `max_tokens`, `system` (keep `cache_control: ephemeral`), and `messages`.
+- Accumulate deltas and parse incrementally:
+
+```js
+let accumulated = '';
+const stream = client.messages.stream({ /* same args */ });
+
+if (onPartial) {
+  stream.on('text', (delta) => {
+    accumulated += delta;
+    const partial = tryParsePartial(accumulated);
+    if (partial) {
+      onPartial({ ...partial, language: targetLang });
+    }
+  });
+}
+
+const finalMessage = await stream.finalMessage();
+```
+
+- Add a `tryParsePartial(text)` helper that calls `stripFences` then `parsePartialJson`, wrapped in try/catch, returning `null` on failure. Require that the cleaned text starts with `{`.
+- Keep the `stop_reason === 'max_tokens'` guard against `finalMessage.stop_reason`.
+- When `onPartial` is provided, parse the final JSON from `accumulated` (not `extractText(finalMessage)`), because the accumulated buffer is already what we saw on the wire.
+- Do NOT introduce a `fetch` call, SSE parser, backend proxy, or custom event loop. Use the SDK's `stream.on('text', …)` helper only.
+
+### 2. `src/App.jsx` — state shape
+
+Add two pieces of state back:
+
+```js
+const [partialBriefing, setPartialBriefing] = useState(null);
+const [isStreaming, setIsStreaming] = useState(false);
+```
+
+Reset both in `handleReset`. In `handleGenerate`, before the try block: `setPartialBriefing(null); setIsStreaming(true);` and in `finally`: `setIsStreaming(false);`.
+
+Pass `onPartial` to `generateBriefing`:
+
+```js
+const { briefing: b } = await generateBriefing(rows, {
+  lang: targetLang,
+  onPartial: (partial) => {
+    // Only promote into the briefing view once there is a readable summary —
+    // earlier partials are mostly noise.
+    if (partial?.summary && typeof partial.summary === 'string' && partial.summary.length > 12) {
+      setPartialBriefing(partial);
+      setStage('briefing');
+    }
+  },
+});
+```
+
+Derive the active briefing and pass it through:
+
+```js
+const activeBriefing = briefing ?? partialBriefing;
+// render <BriefingView briefing={activeBriefing} isStreaming={isStreaming} ... />
+```
+
+Clear `partialBriefing` after the full briefing lands. Disable the PDF button with `disabled={downloading || isStreaming || !briefing}`.
+
+### 3. `src/components/BriefingView.jsx` — partial tolerance
+
+The component must render gracefully when fields are missing or arrays are short:
+
+- Accept a new `isStreaming` prop.
+- Wrap each array section in a helper that renders skeleton rows when the array is missing or shorter than `placeholderCount` (typically 3). Filter out non-object entries that may appear mid-stream.
+- Render a `SummarySkeleton` block while `briefing.summary` is missing; when present, append a `<BlinkingCaret />` only while `isStreaming`.
+- Helper components to add back: `RankedList`, `PartialList`, `RankedRowSkeleton`, `BlockSkeleton`, `SummarySkeleton`, `BlinkingCaret`, and `isPlainObject`. Keep them private to the file.
+- Tailwind: use `animate-pulse` on skeletons, `bg-charcoal/10` and `bg-charcoal/5` for bars, matching the existing muted palette.
+
+## Guardrails — do not break these
+
+- Do not change the prompt, the schema, or the model.
+- Do not start streaming the chart or the hero stats — those are derived from `rows`, not from the model output.
+- The heuristic `partial.summary.length > 12` is load-bearing; do not lower it or remove it. Without it, the UI flashes garbage.
+- Keep the cached-fallback `catch` branch in `handleGenerate`.
+- Do not add a typewriter effect, loading bar, or per-character animation — the `BlinkingCaret` is the only streaming affordance.
+
+## Acceptance check
+
+- Upload the sample CSV → the generating state flips to the briefing view within ~1s of the first chunk carrying a summary, and later sections fill in.
+- `?demo=seed` and `?demo=cached` still work unchanged.
+- PDF download stays disabled until `isStreaming` is false.
+- `npm run build` succeeds.

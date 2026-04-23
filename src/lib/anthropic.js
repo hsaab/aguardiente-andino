@@ -1,13 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { parse as parsePartialJson } from 'partial-json';
 import { SYSTEM_PROMPT, buildUserPrompt } from '../prompts/weeklyBriefing.js';
 import { normalizeLanguage, validateBriefing } from './briefingSchema.js';
 
 const MODEL = 'claude-sonnet-4-6';
 
-// The briefing is now single-language across ~6 sections (no per-account
-// chart_data echo), so 8K output tokens leaves comfortable headroom without
-// burning latency on a generous max we never approach.
+// The briefing is ~6 sections (no per-account chart_data echo), so 8K output
+// tokens leaves comfortable headroom without burning latency on a generous
+// max we never approach.
 const MAX_TOKENS = 8000;
 
 let clientSingleton = null;
@@ -29,28 +28,22 @@ function getClient() {
 }
 
 /**
- * Generate a weekly briefing from parsed CSV rows. Streams the response and
- * forwards a best-effort parsed partial briefing to onPartial as tokens
- * arrive, so the UI can render section-by-section instead of staring at a
- * spinner. Returns a validated complete briefing plus token usage.
+ * Generate a weekly briefing from parsed CSV rows. Awaits the full response
+ * before returning — the UI stays on the loading state until the briefing is
+ * ready to render in one piece.
  *
  * @param {Array<object>} rows — parsed CSV rows
  * @param {object} [opts]
  * @param {'en'|'es'} [opts.lang] — target language for narrative fields
- * @param {(partial: object) => void} [opts.onPartial] — fired on each text
- *   delta with the latest best-effort parsed JSON object
  */
-export async function generateBriefing(rows, { lang = 'en', onPartial } = {}) {
+export async function generateBriefing(rows, { lang = 'en' } = {}) {
   const client = getClient();
   const targetLang = normalizeLanguage(lang);
   const userPrompt = buildUserPrompt(rows, targetLang);
 
-  let accumulated = '';
-
-  // Use messages.stream so we can fire onPartial on every text delta. The
-  // stable system prompt is marked cache_control: ephemeral so subsequent
+  // The stable system prompt is marked cache_control: ephemeral so subsequent
   // calls reuse the cached prefix (lower TTFT, ~90% cheaper input tokens).
-  const stream = client.messages.stream({
+  const response = await client.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: [
@@ -63,51 +56,24 @@ export async function generateBriefing(rows, { lang = 'en', onPartial } = {}) {
     messages: [{ role: 'user', content: userPrompt }],
   });
 
-  if (onPartial) {
-    stream.on('text', (delta) => {
-      accumulated += delta;
-      const partial = tryParsePartial(accumulated);
-      if (partial) {
-        // Always tag the partial with the target language so the UI can
-        // detect a mismatch even before the final message arrives.
-        onPartial({ ...partial, language: targetLang });
-      }
-    });
-  }
-
-  const finalMessage = await stream.finalMessage();
-
   // If the model hit the output cap, the JSON is almost certainly truncated.
   // Surface a clear message instead of a misleading "Unterminated string" error.
-  if (finalMessage.stop_reason === 'max_tokens') {
+  if (response.stop_reason === 'max_tokens') {
     throw new Error(
       `Model response was truncated at max_tokens=${MAX_TOKENS}. ` +
         `Raise MAX_TOKENS in src/lib/anthropic.js or reduce input size.`
     );
   }
 
-  const text = onPartial ? accumulated : extractText(finalMessage);
+  const text = extractText(response);
   const parsed = parseJson(text);
   const briefing = validateBriefing(parsed);
   briefing.language = targetLang;
 
-  const usage = finalMessage.usage ?? {};
+  const usage = response.usage ?? {};
   logUsage(usage);
 
   return { briefing, usage };
-}
-
-function tryParsePartial(text) {
-  // partial-json tolerates unterminated strings/arrays/objects, which is
-  // exactly what we need mid-stream. We strip any leading markdown fence
-  // the model occasionally prepends despite instructions.
-  const cleaned = stripFences(text);
-  if (!cleaned.trim().startsWith('{')) return null;
-  try {
-    return parsePartialJson(cleaned);
-  } catch {
-    return null;
-  }
 }
 
 function extractText(response) {

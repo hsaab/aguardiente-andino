@@ -1,0 +1,51 @@
+---
+description: Core invariants for the Aguardiente Andino keynote demo — do not violate
+alwaysApply: true
+---
+
+# Keynote Demo Invariants
+
+This app is a **live conference-stage demo**. Any change must keep the upload → preview → generating → briefing flow working end-to-end without regressions. The following files and values are effectively frozen.
+
+## Frozen files — do not edit unless explicitly asked
+
+- `src/lib/briefingSchema.js` — the JSON contract between Claude and the UI
+- `src/prompts/weeklyBriefing.js` — system + user prompts (already tuned)
+- `src/demo/fixture.js` — bundled fixture briefing used by `?demo=seed`
+- `public/sample-data/` — rehearsal CSVs
+- `public/logo.png` — used by the PDF exporter
+
+## Frozen values
+
+- Model: `MODEL = 'claude-sonnet-4-6'` in `src/lib/anthropic.js`. Do not change, upgrade, or swap providers.
+- `dangerouslyAllowBrowser: true` on the Anthropic client — required (no backend).
+- `cache_control: { type: 'ephemeral' }` on the system prompt block — keeps token cost low.
+- Env var name: `VITE_ANTHROPIC_API_KEY`. Do not rename.
+
+## Demo-safety guarantees
+
+- Keep the `catch` branch in `handleGenerate` (`src/App.jsx`) that falls back to `loadBriefing()` when the API fails.
+- Keep the `?demo=seed` / `?demo=cached` `useEffect` in `src/App.jsx` intact — these are the keynote fallbacks.
+- Keep the `stop_reason === 'max_tokens'` guard in `src/lib/anthropic.js` so truncated JSON throws a clear error instead of a JSON parse crash.
+- Do not remove the `isCached` badge logic in `BriefingView` — the speaker relies on it visually.
+
+## Stack constraints
+
+- Language is **JavaScript with JSX**. Do not migrate to TypeScript.
+- Styling is **Tailwind only**. No inline `style={}` objects beyond what already exists, no new CSS files, no CSS-in-JS libraries.
+- No new npm dependencies without explicit approval. `partial-json` is already installed and may be used.
+- No backend, no serverless routes, no proxy — the app is a pure Vite SPA calling Anthropic directly.
+- React 19 + Vite 8. Do not pin or downgrade.
+
+## Code hygiene
+
+- Keep files under 300 lines. New logic goes in new files under `src/lib/`, `src/hooks/`, or `src/components/`.
+- New components must be functional components with hooks. No class components.
+- Never rename an exported symbol without updating every call site in the same change.
+- Do not add narrating comments (`// set the state`). Comments should explain intent, trade-offs, or constraints only.
+- Reuse existing primitives: `SectionCard`, `HeroMetric`, `useStrings`, the `formatMoney`/`formatInt`/`formatPct` helpers, and the Tailwind tokens in `tailwind.config.js` (`charcoal`, `cream`, `emerald-*`, `gold-*`, `danger`, `muted`).
+
+## Before finishing any change
+
+- Run `npm run build` and make sure it succeeds.
+- Do not introduce new ESLint errors beyond the pre-existing `motion`-unused-var noise.

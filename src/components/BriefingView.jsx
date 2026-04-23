@@ -21,8 +21,8 @@ const staggerContainer = {
  * toggles the UI language to a different one, an inline "Re-generate" CTA
  * appears so they can request a fresh briefing in that language.
  *
- * Renders partial briefings safely: any missing field falls back to a
- * skeleton placeholder so streaming output can swap in section-by-section.
+ * Assumes a complete briefing object — the upstream stage machine waits for
+ * the full response before mounting this view.
  */
 export default function BriefingView({
   briefing,
@@ -30,7 +30,6 @@ export default function BriefingView({
   currency,
   rows,
   isCached,
-  isStreaming = false,
   onRegenerateLanguage,
 }) {
   const t = useStrings(lang);
@@ -54,7 +53,6 @@ export default function BriefingView({
         currency={currency}
         stats={heroStats}
         isCached={isCached}
-        isStreaming={isStreaming}
       />
 
       {langMismatch && onRegenerateLanguage && (
@@ -68,9 +66,8 @@ export default function BriefingView({
 
       <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-5">
         <SectionCard eyebrow={t.topGrowers} accent="emerald">
-          <RankedList
-            items={briefing?.top_growers}
-            renderItem={(g, i) => (
+          <ol className="space-y-4">
+            {briefing.top_growers.map((g, i) => (
               <RankedRow
                 key={`${g.account}-${i}`}
                 rank={i + 1}
@@ -80,15 +77,13 @@ export default function BriefingView({
                 metricTone="positive"
                 trailing={`+${formatInt(g.bottles_delta)} ${t.bottles}`}
               />
-            )}
-            placeholderCount={3}
-          />
+            ))}
+          </ol>
         </SectionCard>
 
         <SectionCard eyebrow={t.bottomDecliners} accent="danger">
-          <RankedList
-            items={briefing?.bottom_decliners}
-            renderItem={(d, i) => (
+          <ol className="space-y-4">
+            {briefing.bottom_decliners.map((d, i) => (
               <RankedRow
                 key={`${d.account}-${i}`}
                 rank={i + 1}
@@ -99,16 +94,13 @@ export default function BriefingView({
                 trailing={`${d.returns} ${t.returns.toLowerCase()}`}
                 note={d.reason}
               />
-            )}
-            placeholderCount={3}
-          />
+            ))}
+          </ol>
         </SectionCard>
 
         <SectionCard eyebrow={t.competitorThreats} accent="gold">
-          <PartialList
-            items={briefing?.competitor_threats}
-            placeholderCount={3}
-            renderItem={(th, i) => (
+          <ul className="space-y-4">
+            {briefing.competitor_threats.map((th, i) => (
               <li key={`${th.account}-${i}`} className="border-b border-charcoal/5 pb-4 last:border-0 last:pb-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="font-semibold text-charcoal">{th.account}</div>
@@ -123,15 +115,13 @@ export default function BriefingView({
                   <p className="mt-2 text-base text-charcoal/80 leading-relaxed">{th.note}</p>
                 )}
               </li>
-            )}
-          />
+            ))}
+          </ul>
         </SectionCard>
 
         <SectionCard eyebrow={t.promoInefficiency} accent="danger">
-          <PartialList
-            items={briefing?.promo_inefficiency}
-            placeholderCount={3}
-            renderItem={(p, i) => (
+          <ul className="space-y-4">
+            {briefing.promo_inefficiency.map((p, i) => (
               <li key={`${p.account}-${i}`} className="border-b border-charcoal/5 pb-4 last:border-0 last:pb-0">
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="font-semibold text-charcoal">{p.account}</div>
@@ -147,19 +137,15 @@ export default function BriefingView({
                   <p className="mt-2 text-base text-charcoal/80 leading-relaxed">{p.note}</p>
                 )}
               </li>
-            )}
-          />
+            ))}
+          </ul>
         </SectionCard>
       </div>
 
       <div className="mt-5">
         <SectionCard eyebrow={t.actions} accent="emerald">
-          <PartialList
-            items={briefing?.actions}
-            placeholderCount={3}
-            ordered
-            className="space-y-5"
-            renderItem={(a, i) => (
+          <ol className="space-y-5">
+            {briefing.actions.map((a, i) => (
               <li key={a.priority ?? i} className="flex gap-5 items-start">
                 <div className="shrink-0 h-10 w-10 rounded-full bg-emerald-800 text-white font-display text-lg font-semibold flex items-center justify-center tabular-nums">
                   {a.priority ?? i + 1}
@@ -175,8 +161,8 @@ export default function BriefingView({
                   )}
                 </div>
               </li>
-            )}
-          />
+            ))}
+          </ol>
         </SectionCard>
       </div>
 
@@ -187,10 +173,8 @@ export default function BriefingView({
   );
 }
 
-function Hero({ briefing, lang, currency, stats, isCached, isStreaming }) {
+function Hero({ briefing, lang, currency, stats, isCached }) {
   const t = useStrings(lang);
-  const summaryText = typeof briefing?.summary === 'string' ? briefing.summary : '';
-  const weekLabel = briefing?.week_label;
 
   return (
     <motion.div
@@ -207,18 +191,13 @@ function Hero({ briefing, lang, currency, stats, isCached, isStreaming }) {
           {t.cachedBadge}
         </div>
       )}
-      <div className="eyebrow min-h-[1rem]">{weekLabel || ''}</div>
+      <div className="eyebrow min-h-[1rem]">{briefing.week_label}</div>
       <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-charcoal tracking-tight">
         {t.summary}
       </h2>
-      {summaryText ? (
-        <p className="mt-5 font-display text-xl md:text-2xl leading-snug text-charcoal/90 max-w-4xl">
-          {summaryText}
-          {isStreaming && <BlinkingCaret />}
-        </p>
-      ) : (
-        <SummarySkeleton isStreaming={isStreaming} />
-      )}
+      <p className="mt-5 font-display text-xl md:text-2xl leading-snug text-charcoal/90 max-w-4xl">
+        {briefing.summary}
+      </p>
 
       <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-4">
         <HeroStat
@@ -322,84 +301,4 @@ function RankedRow({ rank, title, subtitle, metric, metricTone, trailing, note }
       </div>
     </li>
   );
-}
-
-/**
- * Renders an ordered list of items, falling back to N skeleton rows when
- * the source array is missing or shorter than expected. Used by the two
- * ranked-row sections.
- */
-function RankedList({ items, renderItem, placeholderCount }) {
-  const safe = Array.isArray(items) ? items.filter(isPlainObject) : [];
-  const placeholders = Math.max(0, placeholderCount - safe.length);
-  return (
-    <ol className="space-y-4">
-      {safe.map((item, i) => renderItem(item, i))}
-      {Array.from({ length: placeholders }).map((_, i) => (
-        <RankedRowSkeleton key={`skeleton-${i}`} rank={safe.length + i + 1} />
-      ))}
-    </ol>
-  );
-}
-
-/**
- * Generic partial-friendly list for the freeform sections (threats, promo,
- * actions). Filters out non-object entries that may appear mid-stream.
- */
-function PartialList({ items, renderItem, placeholderCount, ordered = false, className = 'space-y-4' }) {
-  const safe = Array.isArray(items) ? items.filter(isPlainObject) : [];
-  const placeholders = Math.max(0, placeholderCount - safe.length);
-  const Tag = ordered ? 'ol' : 'ul';
-  return (
-    <Tag className={className}>
-      {safe.map((item, i) => renderItem(item, i))}
-      {Array.from({ length: placeholders }).map((_, i) => (
-        <BlockSkeleton key={`skeleton-${i}`} />
-      ))}
-    </Tag>
-  );
-}
-
-function RankedRowSkeleton({ rank }) {
-  return (
-    <li className="flex gap-4 items-start animate-pulse">
-      <div className="shrink-0 mt-0.5 h-7 w-7 rounded-full bg-charcoal/5 text-charcoal/30 font-semibold text-sm flex items-center justify-center tabular-nums">
-        {rank}
-      </div>
-      <div className="flex-1 min-w-0 space-y-2">
-        <div className="h-4 w-1/2 rounded bg-charcoal/10" />
-        <div className="h-3 w-1/3 rounded bg-charcoal/5" />
-      </div>
-    </li>
-  );
-}
-
-function BlockSkeleton() {
-  return (
-    <li className="border-b border-charcoal/5 pb-4 last:border-0 last:pb-0 animate-pulse space-y-2">
-      <div className="h-4 w-2/3 rounded bg-charcoal/10" />
-      <div className="h-3 w-1/2 rounded bg-charcoal/5" />
-      <div className="h-3 w-3/4 rounded bg-charcoal/5" />
-    </li>
-  );
-}
-
-function SummarySkeleton({ isStreaming }) {
-  return (
-    <div className={`mt-5 max-w-4xl space-y-3 ${isStreaming ? 'animate-pulse' : ''}`}>
-      <div className="h-6 w-11/12 rounded bg-charcoal/10" />
-      <div className="h-6 w-10/12 rounded bg-charcoal/10" />
-      <div className="h-6 w-8/12 rounded bg-charcoal/10" />
-    </div>
-  );
-}
-
-function BlinkingCaret() {
-  return (
-    <span className="ml-1 inline-block h-5 w-[2px] translate-y-1 bg-charcoal/60 animate-pulse align-baseline" />
-  );
-}
-
-function isPlainObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
 }

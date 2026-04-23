@@ -18,10 +18,9 @@ import useIdleCursor from './hooks/useIdleCursor.js';
 /**
  * Top-level stage machine: upload -> preview -> generating -> briefing
  *
- * The briefing now streams in: as soon as the model emits enough text for
- * the partial JSON parser to extract a summary, we transition straight to
- * the briefing view and let later sections fill in. There is no artificial
- * minimum wait.
+ * The briefing is awaited in full before transitioning out of the loading
+ * state — the user sees a single clean swap from the animated generating
+ * view to the finished briefing, no partial flicker.
  */
 export default function App() {
   const [lang, setLang] = useState('en');
@@ -30,8 +29,6 @@ export default function App() {
   const [rows, setRows] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState(null);
   const [briefing, setBriefing] = useState(null);
-  const [partialBriefing, setPartialBriefing] = useState(null);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
@@ -77,8 +74,6 @@ export default function App() {
     setRows(null);
     setUploadedFiles(null);
     setBriefing(null);
-    setPartialBriefing(null);
-    setIsStreaming(false);
     setIsCached(false);
     setError(null);
     setStage('upload');
@@ -90,27 +85,15 @@ export default function App() {
       const targetLang = reportLang === 'es' ? 'es' : 'en';
       setError(null);
       setIsCached(false);
-      setPartialBriefing(null);
-      setIsStreaming(true);
       setStage('generating');
 
       try {
         const { briefing: b } = await generateBriefing(rows, {
           lang: targetLang,
-          onPartial: (partial) => {
-            // Promote the user out of LoadingState into the live briefing
-            // view as soon as the streamed JSON has at least a summary
-            // string the user can read. Earlier than that, the partial is
-            // mostly noise.
-            if (partial?.summary && typeof partial.summary === 'string' && partial.summary.length > 12) {
-              setPartialBriefing(partial);
-              setStage('briefing');
-            }
-          },
         });
         setBriefing(b);
-        setPartialBriefing(null);
         saveBriefing(b);
+        setStage('briefing');
       } catch (err) {
         console.error('[app] generation failed', err);
         // Fall back to cached briefing if available so the demo never dead-ends.
@@ -123,8 +106,6 @@ export default function App() {
           setError(err);
           setStage('preview');
         }
-      } finally {
-        setIsStreaming(false);
       }
     },
     [rows]
@@ -156,8 +137,7 @@ export default function App() {
   // The briefing's own language drives the BriefingView, even if the user
   // toggles the UI language. This keeps the rendered narrative consistent
   // with what was generated; the regenerate banner offers the swap.
-  const activeBriefing = briefing ?? partialBriefing;
-  const briefingLang = activeBriefing?.language ?? lang;
+  const briefingLang = briefing?.language ?? lang;
 
   return (
     <div className="min-h-screen flex flex-col bg-cream">
@@ -188,22 +168,21 @@ export default function App() {
             {stage === 'generating' && (
               <LoadingState key="loading" lang={lang} accountsCount={rows?.length ?? 0} />
             )}
-            {stage === 'briefing' && activeBriefing && (
+            {stage === 'briefing' && briefing && (
               <div key="briefing">
                 <BriefingView
-                  briefing={activeBriefing}
+                  briefing={briefing}
                   lang={briefingLang}
                   currency={currency}
                   rows={rows}
                   isCached={isCached}
-                  isStreaming={isStreaming}
                   onRegenerateLanguage={handleGenerate}
                 />
                 <div className="mt-14 flex flex-wrap items-center justify-center gap-4">
                   <button
                     onClick={handleDownloadPdf}
                     className="btn-primary"
-                    disabled={downloading || isStreaming || !briefing}
+                    disabled={downloading || !briefing}
                   >
                     <DownloadIcon />
                     {downloading

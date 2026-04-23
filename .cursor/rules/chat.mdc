@@ -1,0 +1,79 @@
+---
+description: Exact recipe for adding a chat / Q&A feature on the briefing page so the user can ask questions about the report. Apply whenever the user asks to add chat, conversation, Q&A, follow-up questions, "ask the briefing", or an assistant on the report page.
+alwaysApply: false
+---
+
+# Adding Chat to the Briefing Page
+
+A chat feature that answers questions grounded on the rendered briefing. This is a live-demo build — stay inside this recipe. No drawers, no portals, no floating widgets.
+
+## Placement — non-negotiable
+
+- **Inline**, rendered inside `src/components/BriefingView.jsx`, **below** the `<GrowthChart />` block at the bottom of the `motion.section`.
+- Wrapped in a standard `SectionCard` with an `eyebrow` label ("Ask the briefing" / "Pregúntale al informe") so it reads as another report section.
+- No `position: fixed`, no `position: absolute`, no `z-index`, no drawers, no modals, no portals, no `createPortal`, no `<dialog>`. Normal document flow only.
+- Desktop and mobile use the same layout — it is a block in the main column.
+
+## Files to create
+
+### `src/components/BriefingChat.jsx` (≤ 250 lines)
+
+- Functional component. Props: `{ briefing }` only. No other props — do not thread `rows`, `currency`, or `lang` from the outside; use `briefing.language` directly.
+- Local state via `useState`:
+  - `messages`: `Array<{ role: 'user' | 'assistant', content: string }>`
+  - `input`: string
+  - `pending`: boolean
+- Render inside a `<SectionCard eyebrow={…} accent="emerald">`:
+  - A message list with user messages aligned right on a light `bg-emerald-50` / `bg-charcoal/5` bubble, assistant messages aligned left on transparent/`bg-cream` with `border-charcoal/10`. Use `rounded-xl p-4 text-base leading-relaxed`.
+  - A form with a `<textarea>` (auto-grow is fine but not required) and a primary submit button using the existing `.btn-primary` class.
+  - While `pending`, disable the textarea and button, and show a 3-dot pulse using `animate-pulse` — **not** a full skeleton, **not** a typewriter.
+- On submit: push the user message, call `askBriefing(...)`, push the assistant reply. If the call throws, append an assistant message with an inline error string styled the same as a normal assistant message (no `throw`, no red banner, no `window.alert`).
+- Auto-scroll the message list to the bottom on new messages using `useEffect` + a `ref` on the list container.
+- Empty state: a short suggestion strip with 2–3 example questions that populate the textarea when clicked. Localize via `briefing.language`.
+
+### `src/lib/briefingChat.js`
+
+Export one function:
+
+```js
+export async function askBriefing({ briefing, history, question }) { … }
+```
+
+- Reuse the existing `getClient` helper from `src/lib/anthropic.js` by exporting it from that module if it is not already exported. Do not instantiate a second Anthropic client anywhere.
+- Call `client.messages.create` (non-stream). Do not stream for v1 — the `streaming.mdc` rule can be layered on later.
+- Model: `'claude-sonnet-4-6'`. `max_tokens`: `1024`.
+- System prompt: a short string that embeds `JSON.stringify(briefing)` inside a clearly-delimited block, and instructs the model to:
+  - Answer **only** from the briefing JSON. If the answer is not in the data, say so politely.
+  - Reply in the language indicated by `briefing.language` (`'en'` or `'es'`). Colombian Spanish if `'es'`.
+  - Keep answers to ≤ 3 short paragraphs. No markdown headings.
+  - Never invent accounts, numbers, or competitors that are not in the JSON.
+- `messages`: map `history` to `{ role, content }` pairs + the latest `{ role: 'user', content: question }`. Plain text content, no content blocks with images or tool use.
+- Return the assistant text (string). Extract from `response.content.find(b => b.type === 'text')?.text`.
+- On `stop_reason === 'max_tokens'`, still return the partial text — do not throw (the chat should degrade gracefully).
+- Log token usage via the same `[anthropic]` console line format used in `src/lib/anthropic.js` if that helper is exported; otherwise skip logging.
+
+## Wiring
+
+- In `src/components/BriefingView.jsx`, import `BriefingChat` and render `<BriefingChat briefing={briefing} />` **once**, inside a `<div className="mt-10">` at the bottom of the `motion.section`, right after the `GrowthChart` block.
+- Do not pass chat state to `App.jsx`. The chat is self-contained.
+- Do not modify `handleDownloadPdf`, the PDF button's disabled condition, or the download UI.
+
+## Hard constraints
+
+- **No new npm dependencies.** No markdown renderer, no `react-markdown`, no virtualization, no `react-query`, no state library.
+- **No routing changes.** Do not add a new route or URL param.
+- **No global state.** No React context, no Zustand, no Redux.
+- **No tool use, no JSON mode, no structured outputs.** Plain text replies only.
+- Do not re-parse `rows`, do not re-call `generateBriefing`, do not fetch the CSV again. The briefing JSON is the only ground truth.
+- Do not change the briefing schema, the prompts, or the fixture.
+- Do not add a language toggle inside the chat — follow `briefing.language`.
+- Do not gate PDF export, the reset button, or the regenerate banner on chat state.
+- Do not reuse `isStreaming` or `partialBriefing` from `App.jsx`; the chat has its own local `pending` state.
+
+## Acceptance check
+
+- With `?demo=seed`, open the briefing view → scroll to the bottom → chat card is visible below the chart → asking "Which account declined the most?" returns an answer grounded in `bottom_decliners`.
+- With `?demo=seed` in Spanish, the answer comes back in Colombian Spanish.
+- Asking an unrelated question ("What's the weather in Medellín?") triggers the polite refusal described in the system prompt.
+- PDF download still works and is not blocked by chat activity.
+- `npm run build` succeeds.
