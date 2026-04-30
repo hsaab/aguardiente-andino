@@ -11,8 +11,8 @@ The app currently awaits the full briefing before rendering. To re-add streaming
 
 1. **Implement `src/lib/anthropic.js` first** — copy the streaming block below; do not spelunk `node_modules` unless the build fails with an API error.
 2. **Then `src/App.jsx`** — state, `onPartial`, `activeBriefing`, `finally` / PDF disable.
-3. **Then the briefing view** — partial UI + any small split files (see [File size](#file-size) below).
-4. **Verify once at the end:** `npm run build` **and** `npm run lint` (lint catches real issues like `react-refresh/only-export-components` and dynamic-tag false positives; see [ESLint](#eslint-gotchas-when-adding-partialist--skeletons)).
+3. **Then the briefing view** — add `SummarySkeleton`, `BlinkingCaret`, the padded-slot helpers, and the partial-list rendering **directly inside [src/components/BriefingView.jsx](src/components/BriefingView.jsx)**. Do not create new component files — see [When to split](#when-to-split) below for the only exception.
+4. **Verify once at the end:** `npm run check` (lint + build).
 
 Do not add new npm dependencies. `partial-json` is already in the project.
 
@@ -79,14 +79,9 @@ onPartial: (partial) => {
 - Optional: skeleton for missing `week_label` (pulsing bar) so the hero does not jump.
 - Tailwind: `animate-pulse`, `bg-charcoal/10` and `bg-charcoal/5` for skeleton bars, matching the muted palette.
 
-#### File size
+#### When to split
 
-[AGENTS.md](AGENTS.md) asks to keep files under ~300 lines. It is fine to colocate small presentational pieces in `briefingViewStreamParts.jsx` (skeletons, `PartialList`, `BlinkingCaret`) and `BriefingViewSections.jsx` (the four lists + actions) as long as behavior matches this doc. The important part is the **public props** of `BriefingView`, not the number of files.
-
-## ESLint gotchas (when adding `PartialList` + skeletons)
-
-- **Export only components** from a `*StreamParts*.jsx` file if the repo uses `react-refresh/only-export-components` — do not export a bare `isPlainObject`; keep filtering helpers private inside `PartialList` or move them to a `*.js` util.
-- **Dynamic list tag** (`<ol>` vs `<ul>`): some ESLint configs report the destructured variable (e.g. `ListTag` from `as: ListTag`) as unused because they do not count it as referenced inside `<ListTag>`. Prefer `import { createElement } from 'react'` and `return createElement(ListTag, { className, children: slots });` so the variable is clearly “used”.
+Default: keep `SummarySkeleton`, `BlinkingCaret`, padded-slot helpers, and the partial list/section rendering **inline in `BriefingView.jsx`**. Splitting is only permitted when the file exceeds ~350 lines after the streaming changes land — at that point, move presentational helpers into `briefingViewStreamParts.jsx` and the four section lists into `briefingViewSections.jsx`. Inlining by default avoids two `react-refresh/only-export-components` traps and a dynamic-tag (`<ol>` vs `<ul>`) ESLint pothole that splitting reliably creates.
 
 ## Guardrails — do not break these
 
@@ -101,4 +96,4 @@ onPartial: (partial) => {
 - Upload the sample CSV → loading switches to the briefing view shortly after the first parseable summary chunk; sections fill in afterward.
 - `?demo=seed` and `?demo=cached` still work unchanged (no streaming path).
 - PDF stays disabled until `isStreaming` is false and the finalized `briefing` is set.
-- `npm run build` **and** `npm run lint` succeed (no new lint errors).
+- `npm run check` succeeds (no new lint errors).
