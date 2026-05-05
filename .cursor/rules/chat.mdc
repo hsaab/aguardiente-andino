@@ -5,16 +5,16 @@ alwaysApply: false
 
 # Adding Chat to the Briefing Page
 
-A chat feature that answers questions grounded on the rendered briefing. This is a live-demo build — stay inside this recipe. The canonical source for both files is embedded below; copy them verbatim and adapt only i18n keys and import paths.
+A chat feature that answers questions grounded on the rendered briefing, with assistant replies streaming into the active bubble. This is a live-demo build — stay inside this recipe. The canonical source for both files is embedded below; copy it verbatim and adapt only import paths if needed.
 
 ## Fast path (do this in order, avoid rabbit holes)
 
-1. **Create [`src/lib/briefingChat.js`](src/lib/briefingChat.js)** — copy the canonical source under [§ src/lib/briefingChat.js](#srclibbriefingchatjs) verbatim. Reuse `getClient` from [src/lib/anthropic.js](src/lib/anthropic.js); export it from that module if it is not already exported.
-2. **Create [`src/components/BriefingChat.jsx`](src/components/BriefingChat.jsx)** — copy the canonical source under [§ src/components/BriefingChat.jsx](#srccomponentsbriefingchatjsx) verbatim. Then add every `t.chat*` key it reads to both `en` and `es` blocks of [src/i18n/strings.js](src/i18n/strings.js) — see [Required i18n keys](#required-i18n-keys).
+1. **Create [`src/lib/briefingChat.js`](src/lib/briefingChat.js)** — copy the canonical streaming source under [§ src/lib/briefingChat.js](#srclibbriefingchatjs) verbatim. Reuse `getClient` from [src/lib/anthropic.js](src/lib/anthropic.js); export it from that module if it is not already exported.
+2. **Create [`src/components/BriefingChat.jsx`](src/components/BriefingChat.jsx)** — copy the canonical source under [§ src/components/BriefingChat.jsx](#srccomponentsbriefingchatjsx) verbatim. Keep chat UI copy English-only and local to the component; do not add `chat*` keys to [src/i18n/strings.js](src/i18n/strings.js).
 3. **Wire it into [`src/components/BriefingView.jsx`](src/components/BriefingView.jsx)** — add `<BriefingChat briefing={briefing} />` inside a `<div className="mt-10">` at the bottom of the `motion.section`, right after the `<GrowthChart />` block. If the streaming rule is also active, gate it on `!isStreaming`.
 4. **Verify once at the end** with `npm run check`. Do not run after each file.
 
-Do not add new npm dependencies, drawers, portals, modals, markdown libraries, or icon libraries. The chat is a normal block in the document flow inside a `SectionCard`.
+Do not add new npm dependencies, drawers, portals, modals, markdown libraries, icon libraries, global state, or routing. The chat is a normal block in the document flow inside a `SectionCard`.
 
 ## Placement — non-negotiable
 
@@ -30,7 +30,8 @@ Copy verbatim. Key behaviors baked in:
 - Single Anthropic client via the shared `getClient` (no second client).
 - Model `'claude-sonnet-4-6'`, `max_tokens: 1024`.
 - System prompt embeds `JSON.stringify(briefing)` and is wrapped with `cache_control: { type: 'ephemeral' }` so multi-turn chats reuse the cached prefix (turn 2+ TTFT drops ~70%, input tokens billed at ~10%).
-- `stop_reason === 'max_tokens'` returns the partial text instead of throwing — chat degrades gracefully.
+- Uses `client.messages.stream` and calls `onDelta(delta)` as text arrives.
+- `stop_reason === 'max_tokens'` returns the accumulated partial text instead of throwing — chat degrades gracefully.
 
 ```js
 import { getClient } from './anthropic.js';
@@ -84,7 +85,7 @@ function buildChatSystemPrompt(briefing) {
   ].join('\n');
 }
 
-export async function askBriefing({ briefing, history, question }) {
+export async function askBriefingStream({ briefing, history, question, onDelta }) {
   const client = getClient();
   const system = buildChatSystemPrompt(briefing);
 
@@ -93,7 +94,7 @@ export async function askBriefing({ briefing, history, question }) {
     { role: 'user', content: question },
   ];
 
-  const response = await client.messages.create({
+  const stream = client.messages.stream({
     model: CHAT_MODEL,
     max_tokens: CHAT_MAX_TOKENS,
     system: [
@@ -106,13 +107,19 @@ export async function askBriefing({ briefing, history, question }) {
     messages: anthropicMessages,
   });
 
-  const usage = response.usage ?? {};
+  let accumulated = '';
+  stream.on('text', (delta) => {
+    accumulated += delta;
+    onDelta?.(delta);
+  });
+
+  const finalMessage = await stream.finalMessage();
+  const usage = finalMessage.usage ?? {};
   logUsage(usage);
 
-  const block = response.content?.find((b) => b.type === 'text');
-  const text = block?.text?.trim() ?? '';
+  const text = accumulated.trim() || extractText(finalMessage).trim();
 
-  if (response.stop_reason === 'max_tokens') {
+  if (finalMessage.stop_reason === 'max_tokens') {
     return text || '…';
   }
 
@@ -122,20 +129,40 @@ export async function askBriefing({ briefing, history, question }) {
 
   return text;
 }
+
+function extractText(response) {
+  const block = response.content?.find((b) => b.type === 'text');
+  return block?.text ?? '';
+}
 ```
 
 ## `src/components/BriefingChat.jsx`
 
-Copy verbatim. Self-contained: props are `{ briefing }` only, reads `briefing.language` for localization, owns local `useState` for `messages`/`input`/`pending`. Do not thread chat state into `App.jsx`.
+Copy verbatim. Self-contained: props are `{ briefing }` only, keeps English UI copy local, owns local `useState` for `messages`/`input`/`pending`/`streamingReply`. Do not thread chat state into `App.jsx`.
 
 ```jsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import SectionCard from './SectionCard.jsx';
-import { STRINGS } from '../i18n/strings.js';
-import { askBriefing } from '../lib/briefingChat.js';
+import { askBriefingStream } from '../lib/briefingChat.js';
 
 const MotionDiv = motion.div;
+
+const CHAT_COPY = {
+  eyebrow: 'Ask the briefing',
+  emptyHint: 'Ask a focused question about the accounts, risks, competitors, or next actions in this briefing.',
+  tryEyebrow: 'Try',
+  suggestions: [
+    'Which account declined the most?',
+    'Where should we act first?',
+    'What competitor threat matters most?',
+  ],
+  youInitials: 'YOU',
+  assistantA11yLabel: 'Briefing assistant',
+  placeholder: 'Ask about this briefing...',
+  send: 'Send',
+  error: 'I could not answer that just now. Please try again.',
+};
 
 function parseAssistantContent(text) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
@@ -211,12 +238,12 @@ function SendIcon() {
 }
 
 export default function BriefingChat({ briefing }) {
-  const lang = briefing?.language === 'es' ? 'es' : 'en';
-  const t = STRINGS[lang] ?? STRINGS.en;
+  const t = CHAT_COPY;
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
+  const [streamingReply, setStreamingReply] = useState('');
   const listRef = useRef(null);
   const textareaRef = useRef(null);
   const [initialMessageLen] = useState(() => messages.length);
@@ -229,7 +256,7 @@ export default function BriefingChat({ briefing }) {
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
-  }, [messages, pending]);
+  }, [messages, pending, streamingReply]);
 
   async function handleSubmit(e) {
     e?.preventDefault();
@@ -239,14 +266,23 @@ export default function BriefingChat({ briefing }) {
     const history = messages;
     setMessages((prev) => [...prev, { role: 'user', content: question }]);
     setInput('');
+    setStreamingReply('');
     setPending(true);
 
     try {
-      const reply = await askBriefing({ briefing, history, question });
+      const reply = await askBriefingStream({
+        briefing,
+        history,
+        question,
+        onDelta: (delta) => {
+          setStreamingReply((prev) => prev + delta);
+        },
+      });
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: t.chatError }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: t.error }]);
     } finally {
+      setStreamingReply('');
       setPending(false);
     }
   }
@@ -259,7 +295,7 @@ export default function BriefingChat({ briefing }) {
   }
 
   return (
-    <SectionCard eyebrow={t.chatEyebrow} accent="emerald">
+    <SectionCard eyebrow={t.eyebrow} accent="emerald">
       <div className="flex flex-col gap-6">
         <div
           ref={listRef}
@@ -269,10 +305,10 @@ export default function BriefingChat({ briefing }) {
         >
           {messages.length === 0 && (
             <div className="space-y-4">
-              <p className="text-base text-charcoal/85 leading-relaxed">{t.chatEmptyHint}</p>
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">{t.chatTryEyebrow}</div>
+              <p className="text-base text-charcoal/85 leading-relaxed">{t.emptyHint}</p>
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">{t.tryEyebrow}</div>
               <div className="flex flex-wrap gap-2">
-                {t.chatSuggestions.map((s) => (
+                {t.suggestions.map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -309,7 +345,7 @@ export default function BriefingChat({ briefing }) {
                     className="hidden sm:flex h-7 w-7 rounded-full shrink-0 bg-charcoal text-cream items-center justify-center text-[11px] font-semibold"
                     aria-hidden="true"
                   >
-                    {t.chatYouInitials}
+                    {t.youInitials}
                   </div>
                 </MotionDiv>
               );
@@ -325,7 +361,7 @@ export default function BriefingChat({ briefing }) {
               >
                 <div
                   className="hidden sm:flex h-7 w-7 rounded-full shrink-0 bg-emerald-800 text-cream items-center justify-center"
-                  aria-label={t.chatAssistantA11yLabel}
+                  aria-label={t.assistantA11yLabel}
                 >
                   <SparkleIcon />
                 </div>
@@ -347,13 +383,16 @@ export default function BriefingChat({ briefing }) {
               >
                 <SparkleIcon />
               </div>
-              <div
-                className="rounded-2xl rounded-bl-md px-4 py-3 bg-cream ring-1 ring-charcoal/10 flex gap-1.5 items-center"
-                aria-hidden="true"
-              >
-                <span className="h-2 w-2 rounded-full bg-charcoal/35 animate-pulse [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-charcoal/35 animate-pulse [animation-delay:150ms]" />
-                <span className="h-2 w-2 rounded-full bg-charcoal/35 animate-pulse [animation-delay:300ms]" />
+              <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-bl-md px-4 py-3 text-base leading-relaxed bg-cream text-charcoal ring-1 ring-charcoal/10">
+                {streamingReply ? (
+                  <AssistantMessage content={streamingReply} emphasizeLead={messages.length === 1} />
+                ) : (
+                  <div className="flex gap-1.5 items-center" aria-hidden="true">
+                    <span className="h-2 w-2 rounded-full bg-charcoal/35 animate-pulse [animation-delay:0ms]" />
+                    <span className="h-2 w-2 rounded-full bg-charcoal/35 animate-pulse [animation-delay:150ms]" />
+                    <span className="h-2 w-2 rounded-full bg-charcoal/35 animate-pulse [animation-delay:300ms]" />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -362,7 +401,7 @@ export default function BriefingChat({ briefing }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1 min-w-0">
             <label htmlFor="briefing-chat-input" className="sr-only">
-              {t.chatPlaceholder}
+              {t.placeholder}
             </label>
             <textarea
               id="briefing-chat-input"
@@ -371,7 +410,7 @@ export default function BriefingChat({ briefing }) {
               disabled={pending}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={t.chatPlaceholder}
+              placeholder={t.placeholder}
               rows={2}
               className="w-full flex-1 rounded-xl border border-charcoal/15 bg-white px-4 py-3 text-base text-charcoal placeholder:text-muted resize-y min-h-[3rem] focus:outline-none focus:ring-2 focus:ring-emerald-800/30 focus:border-emerald-800/40 disabled:opacity-60 disabled:cursor-not-allowed"
             />
@@ -382,7 +421,7 @@ export default function BriefingChat({ briefing }) {
             className="btn-primary inline-flex items-center justify-center gap-2 shrink-0"
           >
             <SendIcon />
-            {t.chatSend}
+            {t.send}
           </button>
         </form>
       </div>
@@ -391,19 +430,11 @@ export default function BriefingChat({ briefing }) {
 }
 ```
 
-## Required i18n keys
+## Chat copy
 
-The component reads these from [src/i18n/strings.js](src/i18n/strings.js). Add them in both the `en` and `es` blocks:
-
-- `chatEyebrow` — section eyebrow ("Ask the briefing" / "Pregúntale al informe").
-- `chatEmptyHint` — friendly empty-state copy.
-- `chatTryEyebrow` — small label above suggestion chips ("Try" / "Prueba").
-- `chatSuggestions` — array of 2–3 suggestion chip strings.
-- `chatYouInitials` — 2–3 char user avatar text ("YOU" / "TÚ").
-- `chatAssistantA11yLabel` — `aria-label` for the assistant avatar.
-- `chatPlaceholder` — textarea placeholder.
-- `chatSend` — send button label.
-- `chatError` — fallback assistant message on API error.
+- Keep chat UI copy English-only in the local `CHAT_COPY` object inside [src/components/BriefingChat.jsx](src/components/BriefingChat.jsx).
+- Do not add `chat*` keys to [src/i18n/strings.js](src/i18n/strings.js).
+- The model may still answer in the generated briefing's language because `buildChatSystemPrompt` reads `briefing.language`; this is prompt behavior, not UI localization work.
 
 ## Wiring
 
@@ -418,6 +449,7 @@ The component reads these from [src/i18n/strings.js](src/i18n/strings.js). Add t
 - **No routing changes.** Do not add a new route or URL param.
 - **No global state.** No React context, no Zustand, no Redux.
 - **No tool use, no JSON mode, no structured outputs.** Plain text replies only.
+- **No extra localization work.** Keep the chat UI English-only; do not add Spanish suggestion chips or `chat*` string keys.
 - Do not re-parse `rows`, do not re-call `generateBriefing`, do not fetch the CSV again. The briefing JSON is the only ground truth.
 - Do not change the briefing schema, the prompts, or the fixture.
 - Do not add a language toggle inside the chat — follow `briefing.language`.
@@ -431,10 +463,9 @@ Run `npm run check` (lint + build) once after **all** edits — not after each f
 
 ## Acceptance check
 
-- With `?demo=seed`, open the briefing view → scroll to the bottom → chat card is visible below the chart → asking "Which account declined the most?" returns an answer grounded in `bottom_decliners`.
-- With `?demo=seed` in Spanish, the answer comes back in Colombian Spanish.
+- With `?demo=seed`, open the briefing view → scroll to the bottom → chat card is visible below the chart → asking "Which account declined the most?" streams into the assistant bubble and returns an answer grounded in `bottom_decliners`.
 - Asking an unrelated question ("What's the weather in Medellín?") triggers the polite refusal described in the system prompt.
-- UI check: avatars render for both roles, bubbles have distinct but coherent styling with the rest of the report, suggestion chips are rounded and hover/focus correctly, the typing indicator shows three staggered dots, and the composer has a visible focus ring in emerald.
+- UI check: avatars render for both roles, bubbles have distinct but coherent styling with the rest of the report, suggestion chips are rounded and hover/focus correctly, the typing indicator shows three staggered dots before the first delta, streamed text replaces the dots, and the composer has a visible focus ring in emerald.
 - Enter submits, Shift+Enter inserts a newline.
 - PDF download still works and is not blocked by chat activity.
 - The second chat turn in a session shows `cache_r > 0` in the `[anthropic]` console line — caching is active.

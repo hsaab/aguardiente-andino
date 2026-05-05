@@ -11,10 +11,12 @@ The app currently awaits the full briefing before rendering. To re-add streaming
 
 1. **Implement `src/lib/anthropic.js` first** — copy the streaming block below; do not spelunk `node_modules` unless the build fails with an API error.
 2. **Then `src/App.jsx`** — state, `onPartial`, `activeBriefing`, `finally` / PDF disable.
-3. **Then the briefing view** — add `SummarySkeleton`, `BlinkingCaret`, the padded-slot helpers, and the partial-list rendering **directly inside [src/components/BriefingView.jsx](src/components/BriefingView.jsx)**. Do not create new component files — see [When to split](#when-to-split) below for the only exception.
-4. **Verify once at the end:** `npm run check` (lint + build).
+3. **Pre-split the briefing sections** — create [src/components/BriefingViewSections.jsx](src/components/BriefingViewSections.jsx) before touching the report lists. Move the top growers, bottom decliners, competitor threats, promo inefficiency, and actions sections there.
+4. **Then make the briefing view stream-tolerant** — keep `SummarySkeleton`, `BlinkingCaret`, and the small streaming guards in [src/components/BriefingView.jsx](src/components/BriefingView.jsx). The whole generated briefing should progressively render: start once `summary` is useful, then let each section fill as parseable arrays arrive.
+5. **Verify once at the end:** `npm run check` (lint + build).
 
 Do not add new npm dependencies. `partial-json` is already in the project.
+Do not add portals, modals, drawers, markdown renderers, global state, routing, extra localization work, or new verification loops. Keep the demo build on the direct path below.
 
 ## Required shape
 
@@ -71,17 +73,23 @@ onPartial: (partial) => {
 
 **Inline chat:** If the app has a `BriefingChat` (or similar) that calls the model with the full briefing JSON, render it only when `!isStreaming` so the first message is never sent with a still-growing partial object.
 
-### 3. `src/components/BriefingView.jsx` (and helpers) — partial tolerance
+### 3. `src/components/BriefingViewSections.jsx` — pre-decided split
+
+- Create this file up front. Do not attempt the list sections inline and then reconsider.
+- Export named components for the report lists, for example `TopGrowersSection`, `BottomDeclinersSection`, `CompetitorThreatsSection`, `PromoInefficiencySection`, and `ActionsSection`.
+- Keep the file presentational: receive `items`, `lang`, `currency`, `t`, `isStreaming`, and formatting callbacks or import the existing format helpers directly.
+- Reuse `SectionCard`, `formatInt`, `formatMoney`, and `formatPct`. Do not create a dynamic wrapper tag (`<Tag>`) for `ol` vs `ul`; use explicit markup in each section to avoid JSX/lint traps.
+- Each array section should tolerate partial JSON: coerce missing/non-array values to `[]`, filter items with a local `isPlainObject` check, and pad to `placeholderCount` (usually 3) with skeleton rows while `isStreaming`.
+- Use polished skeleton rows, not empty gaps: `animate-pulse`, `bg-charcoal/10`, `bg-charcoal/5`, and the existing spacing/typography rhythm.
+
+### 4. `src/components/BriefingView.jsx` — streaming shell
 
 - Accept `isStreaming` (default `false` if you want to be defensive).
-- Each array section: pad to `placeholderCount` (usually 3) with skeleton rows; filter list items with a **local** `isPlainObject` / `isItemObject` check so mid-stream oddities do not crash `.map`.
+- Import the section components from [src/components/BriefingViewSections.jsx](src/components/BriefingViewSections.jsx) and pass partial arrays through unchanged; the section file owns coercion/filtering/padding.
 - `SummarySkeleton` when `summary` is missing; when present, show text and append `BlinkingCaret` only while `isStreaming`.
-- Optional: skeleton for missing `week_label` (pulsing bar) so the hero does not jump.
-- Tailwind: `animate-pulse`, `bg-charcoal/10` and `bg-charcoal/5` for skeleton bars, matching the muted palette.
-
-#### When to split
-
-Default: keep `SummarySkeleton`, `BlinkingCaret`, padded-slot helpers, and the partial list/section rendering **inline in `BriefingView.jsx`**. Splitting is only permitted when the file exceeds ~350 lines after the streaming changes land — at that point, move presentational helpers into `briefingViewStreamParts.jsx` and the four section lists into `briefingViewSections.jsx`. Inlining by default avoids two `react-refresh/only-export-components` traps and a dynamic-tag (`<ol>` vs `<ul>`) ESLint pothole that splitting reliably creates.
+- Add a skeleton for missing `week_label` (pulsing bar) so the hero does not jump.
+- Keep chart data and hero metrics derived from `rows`, not the streamed model payload. Do not make the chart or metric counters stream.
+- If `BriefingChat` exists, render it only when `!isStreaming` so it never receives a partial briefing.
 
 ## Guardrails — do not break these
 
@@ -90,6 +98,7 @@ Default: keep `SummarySkeleton`, `BlinkingCaret`, padded-slot helpers, and the p
 - The heuristic `partial.summary.length > 12` is load-bearing; do not lower it or remove it. Without it, the UI flashes garbage.
 - Keep the cached-fallback `catch` branch in `handleGenerate`.
 - Do not add a typewriter effect, fake token delays, or per-character animation — the `BlinkingCaret` (only while `isStreaming`) is the only streaming affordance.
+- Do not run lint/build after every intermediate edit. Verify once at the end with `npm run check`.
 
 ## Acceptance check
 
