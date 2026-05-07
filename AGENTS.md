@@ -71,9 +71,9 @@ The model name `claude-sonnet-4-6` in [src/lib/anthropic.js](src/lib/anthropic.j
 | New pure helper (parsing, formatting, API call) | new file in `src/lib/` |
 | New React component | new file in `src/components/`, wrap in `SectionCard` when possible |
 | New hook | `src/hooks/useXxx.js` |
-| New user-facing copy | add keys to both `en` and `es` in `src/i18n/strings.js` |
+| New user-facing copy | add keys to `en` in `src/i18n/strings.js`; add `es` only if explicitly requested |
 
-Keep files under 300 lines. No TypeScript. Tailwind classes only (tokens in [tailwind.config.js](tailwind.config.js): `charcoal`, `cream`, `emerald-*`, `gold-*`, `danger`, `muted`). No inline `style={}` unless matching existing patterns. No new npm deps without approval — `partial-json` is already installed.
+Keep files under 300 lines. No TypeScript. Tailwind classes only (tokens in [tailwind.config.js](tailwind.config.js): `charcoal`, `cream`, `emerald-*`, `gold-*`, `danger`, `muted`). No inline `style={}` unless matching existing patterns. No new npm deps without approval — `partial-json` is already installed. Existing Spanish localization is for the demo veneer; `useStrings` falls back to English for missing locale keys.
 
 ## Scripts
 

@@ -118,7 +118,6 @@ function logUsage({
       cache_creation_input_tokens * CACHE_WRITE_PER_M +
       cache_read_input_tokens * CACHE_READ_PER_M) /
     1_000_000;
-  // eslint-disable-next-line no-console
   console.info(
     `[anthropic] in=${input_tokens} out=${output_tokens} ` +
       `cache_w=${cache_creation_input_tokens} cache_r=${cache_read_input_tokens} ` +

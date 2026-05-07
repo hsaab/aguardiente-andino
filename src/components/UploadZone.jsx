@@ -1,7 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+
 import { parseCsvFiles, loadSampleCsvFiles } from '../lib/csv.js';
 import { useStrings } from '../i18n/strings.js';
+
+const MotionSection = motion.section;
 
 /**
  * Drag-and-drop + file picker for the weekly CSVs. Accepts one or many files
@@ -79,7 +82,7 @@ export default function UploadZone({ lang, onLoaded }) {
   );
 
   return (
-    <motion.section
+    <MotionSection
       layoutId="stage-card"
       className="mx-auto max-w-3xl text-center"
       initial={{ opacity: 0, y: 8 }}
@@ -181,6 +184,6 @@ export default function UploadZone({ lang, onLoaded }) {
       <p className="mt-8 text-xs text-muted max-w-2xl mx-auto leading-relaxed">
         {t.uploadColumns}
       </p>
-    </motion.section>
+    </MotionSection>
   );
 }

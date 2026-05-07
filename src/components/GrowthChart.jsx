@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
+
 import {
   Bar,
   BarChart,
@@ -11,6 +12,8 @@ import {
   YAxis,
 } from 'recharts';
 import { useStrings } from '../i18n/strings.js';
+
+const MotionSection = motion.section;
 
 /**
  * Horizontal bar chart of week-over-week growth per account.
@@ -28,7 +31,7 @@ export default function GrowthChart({ data, lang }) {
   const chartHeight = Math.max(320, sorted.length * rowHeight + 40);
 
   return (
-    <motion.section
+    <MotionSection
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -113,6 +116,6 @@ export default function GrowthChart({ data, lang }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </motion.section>
+    </MotionSection>
   );
 }

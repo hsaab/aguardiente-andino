@@ -36,6 +36,7 @@ This app is a **live conference-stage demo**. Any change must keep the upload â†
 - No new npm dependencies without explicit approval. `partial-json` is already installed and may be used.
 - No backend, no serverless routes, no proxy â€” the app is a pure Vite SPA calling Anthropic directly.
 - React 19 + Vite 8. Do not pin or downgrade.
+- Existing Spanish localization is a demo veneer. New incremental UI copy can be English-only unless the user explicitly asks for Spanish; `useStrings` falls back to English for missing locale keys.
 
 ## Code hygiene
 

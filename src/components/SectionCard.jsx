@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 
+const MotionSection = motion.section;
+
 /**
  * Reusable card wrapper for briefing sections. Accepts an eyebrow, a headline,
  * and animates in as part of a stagger-fade sequence.
@@ -13,7 +15,7 @@ export default function SectionCard({ eyebrow, title, children, className = '', 
         : 'border-l-emerald-800';
 
   return (
-    <motion.section
+    <MotionSection
       variants={{
         hidden: { opacity: 0, y: 12 },
         visible: { opacity: 1, y: 0 },
@@ -28,6 +30,6 @@ export default function SectionCard({ eyebrow, title, children, className = '', 
         </h3>
       )}
       <div className={title || eyebrow ? 'mt-5' : ''}>{children}</div>
-    </motion.section>
+    </MotionSection>
   );
 }

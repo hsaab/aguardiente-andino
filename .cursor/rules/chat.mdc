@@ -22,3 +22,4 @@ Goal: let the presenter ask quick follow-up questions about the rendered briefin
 - Do not add a backend, proxy, new dependency, routing, global state, markdown renderer, modal, drawer, portal, or tool-calling flow.
 - Keep replies short and glanceable for the live demo.
 - Verify once at the end with `npm run build`.
+- No need to localize incremental chat UI into Spanish; add English copy only unless the user explicitly asks otherwise.

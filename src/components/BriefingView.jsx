@@ -1,11 +1,15 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
+
 import SectionCard from './SectionCard.jsx';
 import HeroMetric from './HeroMetric.jsx';
 import GrowthChart from './GrowthChart.jsx';
 import { useStrings } from '../i18n/strings.js';
 import { formatInt, formatMoney, formatMoneyCompact, formatPct } from '../lib/format.js';
 import { buildChartData, buildHeroStats } from '../lib/briefingMetrics.js';
+
+const MotionSection = motion.section;
+const MotionDiv = motion.div;
 
 const staggerContainer = {
   hidden: {},
@@ -41,7 +45,7 @@ export default function BriefingView({
   const langMismatch = briefingLang && briefingLang !== lang;
 
   return (
-    <motion.section
+    <MotionSection
       className="mx-auto max-w-content"
       variants={staggerContainer}
       initial="hidden"
@@ -169,7 +173,7 @@ export default function BriefingView({
       <div className="mt-10">
         <GrowthChart data={chartData} lang={lang} />
       </div>
-    </motion.section>
+    </MotionSection>
   );
 }
 
@@ -177,7 +181,7 @@ function Hero({ briefing, lang, currency, stats, isCached }) {
   const t = useStrings(lang);
 
   return (
-    <motion.div
+    <MotionDiv
       variants={{
         hidden: { opacity: 0, y: 14 },
         visible: { opacity: 1, y: 0 },
@@ -245,7 +249,7 @@ function Hero({ briefing, lang, currency, stats, isCached }) {
           sub={lang === 'es' ? 'en promoción' : 'in promo budget'}
         />
       </div>
-    </motion.div>
+    </MotionDiv>
   );
 }
 

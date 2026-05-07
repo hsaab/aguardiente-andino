@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { animate, useInView, useMotionValue, useTransform, motion } from 'framer-motion';
 
+const MotionSpan = motion.span;
+
 /**
  * Large Fraunces number that counts up when scrolled into view.
  * Useful for the hero stats on the briefing page.
@@ -30,8 +32,8 @@ export default function HeroMetric({
   }, [inView, value, duration, mv]);
 
   return (
-    <motion.span ref={ref} className={`font-display tabular-nums ${className}`}>
+    <MotionSpan ref={ref} className={`font-display tabular-nums ${className}`}>
       {display}
-    </motion.span>
+    </MotionSpan>
   );
 }

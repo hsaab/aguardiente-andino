@@ -1,8 +1,11 @@
 import { motion } from 'framer-motion';
+
 import { useMemo, useState } from 'react';
 import { summarize } from '../lib/csv.js';
 import { formatInt, formatMoney, formatMoneyCompact, formatPct, weekOverWeek } from '../lib/format.js';
 import { useStrings } from '../i18n/strings.js';
+
+const MotionSection = motion.section;
 
 /**
  * Preview the first 5 rows of parsed data, show top-line stats, and
@@ -23,7 +26,7 @@ export default function DataPreview({ rows, files, lang, currency, onGenerate, o
   const showFileChips = fileCount > 1;
 
   return (
-    <motion.section
+    <MotionSection
       layoutId="stage-card"
       className="mx-auto max-w-5xl"
       initial={{ opacity: 0, y: 8 }}
@@ -126,7 +129,7 @@ export default function DataPreview({ rows, files, lang, currency, onGenerate, o
           {t.generate}
         </button>
       </div>
-    </motion.section>
+    </MotionSection>
   );
 }
 
