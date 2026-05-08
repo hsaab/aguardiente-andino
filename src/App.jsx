@@ -7,7 +7,7 @@ import LoadingState from './components/LoadingState.jsx';
 import BriefingView from './components/BriefingView.jsx';
 import PdfDocument from './components/PdfDocument.jsx';
 import { useStrings } from './i18n/strings.js';
-import { generateBriefingStream } from './lib/anthropic.js';
+import { generateBriefing } from './lib/anthropic.js';
 import { isDemoCachedMode, isDemoSeedMode, loadBriefing, saveBriefing } from './lib/cache.js';
 import { downloadPdf, getLogoDataUrl } from './lib/pdf.js';
 import { loadSampleCsvFiles } from './lib/csv.js';
@@ -18,8 +18,9 @@ import useIdleCursor from './hooks/useIdleCursor.js';
 /**
  * Top-level stage machine: upload -> preview -> generating -> briefing
  *
- * Live generation can now move to the briefing page once the streamed summary
- * exists, then unlocks PDF/chat after the final validated JSON arrives.
+ * The briefing is awaited in full before transitioning out of the loading
+ * state — the user sees a single clean swap from the animated generating
+ * view to the finished briefing, no partial flicker.
  */
 export default function App() {
   const [lang, setLang] = useState('en');
@@ -31,7 +32,6 @@ export default function App() {
   const [isCached, setIsCached] = useState(false);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
-  const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
   const t = useStrings(lang);
 
   useIdleCursor({ idleMs: 2500 });
@@ -55,7 +55,6 @@ export default function App() {
         await new Promise((r) => setTimeout(r, seed ? 2800 : 4200));
         setBriefing(source);
         setIsCached(true);
-        setIsGeneratingBriefing(false);
         setStage('briefing');
       } catch (err) {
         console.error('[demo-mode] failed', err);
@@ -77,7 +76,6 @@ export default function App() {
     setBriefing(null);
     setIsCached(false);
     setError(null);
-    setIsGeneratingBriefing(false);
     setStage('upload');
   }, []);
 
@@ -87,25 +85,17 @@ export default function App() {
       const targetLang = reportLang === 'es' ? 'es' : 'en';
       setError(null);
       setIsCached(false);
-      setBriefing(null);
-      setIsGeneratingBriefing(true);
       setStage('generating');
 
       try {
-        const { briefing: b } = await generateBriefingStream(rows, {
+        const { briefing: b } = await generateBriefing(rows, {
           lang: targetLang,
-          onPartial: (partialBriefing) => {
-            setBriefing(partialBriefing);
-            setStage('briefing');
-          },
         });
         setBriefing(b);
         saveBriefing(b);
-        setIsGeneratingBriefing(false);
         setStage('briefing');
       } catch (err) {
         console.error('[app] generation failed', err);
-        setIsGeneratingBriefing(false);
         // Fall back to cached briefing if available so the demo never dead-ends.
         const cached = loadBriefing();
         if (cached) {
@@ -122,7 +112,7 @@ export default function App() {
   );
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!briefing || isGeneratingBriefing) return;
+    if (!briefing) return;
     setDownloading(true);
     try {
       const logoUrl = await getLogoDataUrl();
@@ -140,7 +130,7 @@ export default function App() {
     } finally {
       setDownloading(false);
     }
-  }, [briefing, rows, currency, isGeneratingBriefing]);
+  }, [briefing, rows, currency]);
 
   useKeyboardShortcut('r', handleReset, { enabled: stage !== 'upload' });
 
@@ -186,14 +176,13 @@ export default function App() {
                   currency={currency}
                   rows={rows}
                   isCached={isCached}
-                  isStreaming={isGeneratingBriefing}
                   onRegenerateLanguage={handleGenerate}
                 />
                 <div className="mt-14 flex flex-wrap items-center justify-center gap-4">
                   <button
                     onClick={handleDownloadPdf}
                     className="btn-primary"
-                    disabled={downloading || !briefing || isGeneratingBriefing}
+                    disabled={downloading || !briefing}
                   >
                     <DownloadIcon />
                     {downloading

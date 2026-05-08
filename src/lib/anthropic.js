@@ -1,5 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { Allow, parse as parsePartialJson } from 'partial-json';
 import { SYSTEM_PROMPT, buildUserPrompt } from '../prompts/weeklyBriefing.js';
 import { normalizeLanguage, validateBriefing } from './briefingSchema.js';
 
@@ -59,37 +58,6 @@ export async function generateBriefing(rows, { lang = 'en' } = {}) {
   return { briefing, usage };
 }
 
-/**
- * Stream the same briefing JSON request, surfacing a renderable partial once
- * the summary arrives while still validating the final response strictly.
- */
-export async function generateBriefingStream(rows, { lang = 'en', onPartial } = {}) {
-  const client = getClient();
-  const targetLang = normalizeLanguage(lang);
-  const userPrompt = buildUserPrompt(rows, targetLang);
-  const stream = client.messages.stream(buildBriefingRequest(userPrompt));
-  let latestText = '';
-
-  stream.on('text', (_delta, textSnapshot) => {
-    latestText = textSnapshot;
-    const partial = parsePartialBriefing(latestText, targetLang);
-    if (partial) onPartial?.(partial);
-  });
-
-  const response = await stream.finalMessage();
-  assertNotTruncated(response);
-
-  const text = latestText || extractText(response);
-  const parsed = parseJson(text);
-  const briefing = validateBriefing(parsed);
-  briefing.language = targetLang;
-
-  const usage = response.usage ?? {};
-  logUsage(usage);
-
-  return { briefing, usage };
-}
-
 function buildBriefingRequest(userPrompt) {
   // The stable system prompt is marked cache_control: ephemeral so subsequent
   // calls reuse the cached prefix (lower TTFT, ~90% cheaper input tokens).
@@ -130,25 +98,6 @@ function parseJson(text) {
     return JSON.parse(cleaned);
   } catch (err) {
     throw new Error(`Could not parse model response as JSON: ${err.message}`);
-  }
-}
-
-function parsePartialBriefing(text, targetLang) {
-  try {
-    const parsed = parsePartialJson(stripFences(text), Allow.STR | Allow.ARR | Allow.OBJ);
-    if (typeof parsed?.summary !== 'string' || !parsed.summary.trim()) return null;
-    return {
-      week_label: typeof parsed.week_label === 'string' ? parsed.week_label : '',
-      summary: parsed.summary,
-      top_growers: Array.isArray(parsed.top_growers) ? parsed.top_growers : [],
-      bottom_decliners: Array.isArray(parsed.bottom_decliners) ? parsed.bottom_decliners : [],
-      competitor_threats: Array.isArray(parsed.competitor_threats) ? parsed.competitor_threats : [],
-      promo_inefficiency: Array.isArray(parsed.promo_inefficiency) ? parsed.promo_inefficiency : [],
-      actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-      language: targetLang,
-    };
-  } catch {
-    return null;
   }
 }
 

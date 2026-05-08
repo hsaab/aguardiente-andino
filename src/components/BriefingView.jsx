@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import SectionCard from './SectionCard.jsx';
 import HeroMetric from './HeroMetric.jsx';
 import GrowthChart from './GrowthChart.jsx';
-import BriefingChat from './BriefingChat.jsx';
 import { useStrings } from '../i18n/strings.js';
 import { formatInt, formatMoney, formatMoneyCompact, formatPct } from '../lib/format.js';
 import { buildChartData, buildHeroStats } from '../lib/briefingMetrics.js';
@@ -35,7 +34,6 @@ export default function BriefingView({
   currency,
   rows,
   isCached,
-  isStreaming = false,
   onRegenerateLanguage,
 }) {
   const t = useStrings(lang);
@@ -175,12 +173,6 @@ export default function BriefingView({
       <div className="mt-10">
         <GrowthChart data={chartData} lang={lang} />
       </div>
-
-      {!isStreaming && (
-        <div className="mt-5">
-          <BriefingChat briefing={briefing} />
-        </div>
-      )}
     </MotionSection>
   );
 }
