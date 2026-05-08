@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT, buildUserPrompt } from '../prompts/weeklyBriefing.js';
 import { normalizeLanguage, validateBriefing } from './briefingSchema.js';
 
-const MODEL = 'claude-sonnet-4-6';
+export const MODEL = 'claude-sonnet-4-6';
 
 // The briefing is ~6 sections (no per-account chart_data echo), so 8K output
 // tokens leaves comfortable headroom without burning latency on a generous
@@ -11,7 +11,7 @@ const MAX_TOKENS = 8000;
 
 let clientSingleton = null;
 
-function getClient() {
+export function getClient() {
   if (clientSingleton) return clientSingleton;
   const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -41,29 +41,11 @@ export async function generateBriefing(rows, { lang = 'en' } = {}) {
   const targetLang = normalizeLanguage(lang);
   const userPrompt = buildUserPrompt(rows, targetLang);
 
-  // The stable system prompt is marked cache_control: ephemeral so subsequent
-  // calls reuse the cached prefix (lower TTFT, ~90% cheaper input tokens).
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: [
-      {
-        type: 'text',
-        text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  const response = await client.messages.create(buildBriefingRequest(userPrompt));
 
   // If the model hit the output cap, the JSON is almost certainly truncated.
   // Surface a clear message instead of a misleading "Unterminated string" error.
-  if (response.stop_reason === 'max_tokens') {
-    throw new Error(
-      `Model response was truncated at max_tokens=${MAX_TOKENS}. ` +
-        `Raise MAX_TOKENS in src/lib/anthropic.js or reduce input size.`
-    );
-  }
+  assertNotTruncated(response);
 
   const text = extractText(response);
   const parsed = parseJson(text);
@@ -74,6 +56,32 @@ export async function generateBriefing(rows, { lang = 'en' } = {}) {
   logUsage(usage);
 
   return { briefing, usage };
+}
+
+function buildBriefingRequest(userPrompt) {
+  // The stable system prompt is marked cache_control: ephemeral so subsequent
+  // calls reuse the cached prefix (lower TTFT, ~90% cheaper input tokens).
+  return {
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: [
+      {
+        type: 'text',
+        text: SYSTEM_PROMPT,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{ role: 'user', content: userPrompt }],
+  };
+}
+
+function assertNotTruncated(response) {
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(
+      `Model response was truncated at max_tokens=${MAX_TOKENS}. ` +
+        `Raise MAX_TOKENS in src/lib/anthropic.js or reduce input size.`
+    );
+  }
 }
 
 function extractText(response) {
@@ -118,7 +126,6 @@ function logUsage({
       cache_creation_input_tokens * CACHE_WRITE_PER_M +
       cache_read_input_tokens * CACHE_READ_PER_M) /
     1_000_000;
-  // eslint-disable-next-line no-console
   console.info(
     `[anthropic] in=${input_tokens} out=${output_tokens} ` +
       `cache_w=${cache_creation_input_tokens} cache_r=${cache_read_input_tokens} ` +

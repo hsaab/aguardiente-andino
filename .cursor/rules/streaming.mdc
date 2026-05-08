@@ -1,108 +1,24 @@
 ---
-description: Exact recipe for adding streaming to the briefing generation. Apply whenever the user asks to stream the model output, show tokens as they arrive, progressive rendering, live generation, or adds streaming to src/lib/anthropic.js or src/App.jsx.
+description: Minimal guardrails for adding streaming to briefing generation. Apply when the user asks for streamed model output, progressive rendering, live generation, or edits streaming in src/lib/anthropic.js or src/App.jsx.
 alwaysApply: false
 ---
 
-# Adding Streaming to Briefing Generation
+# Streaming Briefing Happy Path
 
-The app currently awaits the full briefing before rendering. To re-add streaming, follow this recipe — no variations to the *behavior* (model, prompt, schema, SDK pattern). This is a live-demo feature; ambiguity is unacceptable.
+Goal: make the live demo feel fast while keeping upload -> preview -> generating -> briefing reliable.
 
-## Fast path (do this in order, avoid rabbit holes)
+## Required Path
 
-1. **Implement `src/lib/anthropic.js` first** — copy the streaming block below; do not spelunk `node_modules` unless the build fails with an API error.
-2. **Then `src/App.jsx`** — state, `onPartial`, `activeBriefing`, `finally` / PDF disable.
-3. **Pre-split the briefing sections** — create [src/components/BriefingViewSections.jsx](src/components/BriefingViewSections.jsx) before touching the report lists. Move the top growers, bottom decliners, competitor threats, promo inefficiency, and actions sections there.
-4. **Then make the briefing view stream-tolerant** — keep `SummarySkeleton`, `BlinkingCaret`, and the small streaming guards in [src/components/BriefingView.jsx](src/components/BriefingView.jsx). The whole generated briefing should progressively render: start once `summary` is useful, then let each section fill as parseable arrays arrive.
-5. **Verify once at the end:** `npm run check` (lint + build).
+- Use the existing Anthropic SDK client in `src/lib/anthropic.js`; keep the direct browser call, `claude-sonnet-4-6`, `VITE_ANTHROPIC_API_KEY`, and `dangerouslyAllowBrowser: true`.
+- Stream with `client.messages.stream(...)`, the existing prompt/schema contract, and system `cache_control: { type: 'ephemeral' }`.
+- Accumulate text from `stream.on('text', ...)`; parse partial JSON opportunistically, then parse and validate the final briefing from the accumulated buffer.
+- Keep the `stop_reason === 'max_tokens'` guard and the cached fallback in `handleGenerate`.
+- Show a partial briefing only after a usable `summary` exists, then replace it with the final `briefing` on success.
+- Disable PDF export and hide briefing chat while briefing generation is still streaming.
 
-Do not add new npm dependencies. `partial-json` is already in the project.
-Do not add portals, modals, drawers, markdown renderers, global state, routing, extra localization work, or new verification loops. Keep the demo build on the direct path below.
+## Keep It Small
 
-## Required shape
-
-### 1. `src/lib/anthropic.js`
-
-- Add `import { parse as parsePartialJson } from 'partial-json';` — the dep is already in `package.json`.
-- Change the signature to `generateBriefing(rows, { lang = 'en', onPartial } = {})`.
-- Replace `client.messages.create` with `client.messages.stream` — same `model`, `max_tokens`, `system` (keep `cache_control: ephemeral`), and `messages`.
-- **Always** attach `stream.on('text', (delta) => { accumulated += delta; … })` so `accumulated` is full before final parse. Inside that handler, if `onPartial` is set, also parse and call it (see below). Rationale: the final object must be parsed from the same buffer that was streamed, not an empty string when only the outer `if (onPartial)` registered the listener (a common copy-paste bug from older snippets).
-- Add a `tryParsePartial(text)` helper: `stripFences` → cleaned text must start with `{` → `parsePartialJson` in try/catch → `null` on failure.
-- Incremental callback shape:
-
-```js
-if (onPartial) {
-  const partial = tryParsePartial(accumulated);
-  if (partial) {
-    onPartial({ ...partial, language: targetLang });
-  }
-}
-```
-
-- `const finalMessage = await stream.finalMessage();`
-- Keep the `stop_reason === 'max_tokens'` guard on `finalMessage`.
-- Parse the **final** JSON from `accumulated` (use `stripFences` + `JSON.parse` as today), with fallback to `extractText(finalMessage)` only if the buffer is empty. Then `validateBriefing` as now.
-- Do **not** introduce `fetch`, a raw SSE parser, a backend proxy, or a custom event loop. Use the SDK’s `stream.on('text', …)` only.
-
-### 2. `src/App.jsx` — state and wiring
-
-Add:
-
-```js
-const [partialBriefing, setPartialBriefing] = useState(null);
-const [isStreaming, setIsStreaming] = useState(false);
-```
-
-- Reset both in `handleReset`.
-- At the **start** of `handleGenerate` (with the other setup): `setPartialBriefing(null);` and `setIsStreaming(true)`.
-- In a `finally` after the try/catch: `setIsStreaming(false)`.
-- At the **start of the `catch`**, before cached fallback: `setPartialBriefing(null)` so a failed run does not leave a half-streamed object on the preview/error path.
-- `onPartial` to `generateBriefing` (heuristic is load-bearing):
-
-```js
-onPartial: (partial) => {
-  if (partial?.summary && typeof partial.summary === 'string' && partial.summary.length > 12) {
-    setPartialBriefing(partial);
-    setStage('briefing');
-  }
-},
-```
-
-- After success: `setBriefing(b); setPartialBriefing(null);` and persist as today.
-- `const activeBriefing = briefing ?? partialBriefing;` — render the briefing stage when `activeBriefing` is set, pass `briefing={activeBriefing}` and `isStreaming={isStreaming}` to `BriefingView`.
-- PDF: `disabled={downloading || isStreaming || !briefing}` (the finalized `briefing` state, not the partial only).
-
-**Inline chat:** If the app has a `BriefingChat` (or similar) that calls the model with the full briefing JSON, render it only when `!isStreaming` so the first message is never sent with a still-growing partial object.
-
-### 3. `src/components/BriefingViewSections.jsx` — pre-decided split
-
-- Create this file up front. Do not attempt the list sections inline and then reconsider.
-- Export named components for the report lists, for example `TopGrowersSection`, `BottomDeclinersSection`, `CompetitorThreatsSection`, `PromoInefficiencySection`, and `ActionsSection`.
-- Keep the file presentational: receive `items`, `lang`, `currency`, `t`, `isStreaming`, and formatting callbacks or import the existing format helpers directly.
-- Reuse `SectionCard`, `formatInt`, `formatMoney`, and `formatPct`. Do not create a dynamic wrapper tag (`<Tag>`) for `ol` vs `ul`; use explicit markup in each section to avoid JSX/lint traps.
-- Each array section should tolerate partial JSON: coerce missing/non-array values to `[]`, filter items with a local `isPlainObject` check, and pad to `placeholderCount` (usually 3) with skeleton rows while `isStreaming`.
-- Use polished skeleton rows, not empty gaps: `animate-pulse`, `bg-charcoal/10`, `bg-charcoal/5`, and the existing spacing/typography rhythm.
-
-### 4. `src/components/BriefingView.jsx` — streaming shell
-
-- Accept `isStreaming` (default `false` if you want to be defensive).
-- Import the section components from [src/components/BriefingViewSections.jsx](src/components/BriefingViewSections.jsx) and pass partial arrays through unchanged; the section file owns coercion/filtering/padding.
-- `SummarySkeleton` when `summary` is missing; when present, show text and append `BlinkingCaret` only while `isStreaming`.
-- Add a skeleton for missing `week_label` (pulsing bar) so the hero does not jump.
-- Keep chart data and hero metrics derived from `rows`, not the streamed model payload. Do not make the chart or metric counters stream.
-- If `BriefingChat` exists, render it only when `!isStreaming` so it never receives a partial briefing.
-
-## Guardrails — do not break these
-
-- Do not change the prompt, the schema, or the model.
-- Do not “stream” the chart or the hero stats — they stay derived from `rows`, not the model.
-- The heuristic `partial.summary.length > 12` is load-bearing; do not lower it or remove it. Without it, the UI flashes garbage.
-- Keep the cached-fallback `catch` branch in `handleGenerate`.
-- Do not add a typewriter effect, fake token delays, or per-character animation — the `BlinkingCaret` (only while `isStreaming`) is the only streaming affordance.
-- Do not run lint/build after every intermediate edit. Verify once at the end with `npm run check`.
-
-## Acceptance check
-
-- Upload the sample CSV → loading switches to the briefing view shortly after the first parseable summary chunk; sections fill in afterward.
-- `?demo=seed` and `?demo=cached` still work unchanged (no streaming path).
-- PDF stays disabled until `isStreaming` is false and the finalized `briefing` is set.
-- `npm run check` succeeds (no new lint errors).
+- Do not change the prompt, schema, fixture, model, env var, or demo seed/cached flows.
+- Do not add a backend, proxy, new dependency, routing, global state, markdown renderer, modal, drawer, or fake typewriter effect.
+- Keep chart data and hero metrics derived from CSV rows, not the streamed model payload.
+- Verify once at the end with `npm run build`.

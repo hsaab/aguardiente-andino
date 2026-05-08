@@ -109,5 +109,5 @@ export const STRINGS = {
 };
 
 export function useStrings(lang) {
-  return STRINGS[lang] ?? STRINGS.en;
+  return { ...STRINGS.en, ...(STRINGS[lang] ?? {}) };
 }
