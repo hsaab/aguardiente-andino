@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { Allow, parse as parsePartialJson } from 'partial-json';
 import { SYSTEM_PROMPT, buildUserPrompt } from '../prompts/weeklyBriefing.js';
 import { normalizeLanguage, validateBriefing } from './briefingSchema.js';
 
-const MODEL = 'claude-sonnet-4-6';
+export const MODEL = 'claude-sonnet-4-6';
 
 // The briefing is ~6 sections (no per-account chart_data echo), so 8K output
 // tokens leaves comfortable headroom without burning latency on a generous
@@ -11,7 +12,7 @@ const MAX_TOKENS = 8000;
 
 let clientSingleton = null;
 
-function getClient() {
+export function getClient() {
   if (clientSingleton) return clientSingleton;
   const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -41,29 +42,11 @@ export async function generateBriefing(rows, { lang = 'en' } = {}) {
   const targetLang = normalizeLanguage(lang);
   const userPrompt = buildUserPrompt(rows, targetLang);
 
-  // The stable system prompt is marked cache_control: ephemeral so subsequent
-  // calls reuse the cached prefix (lower TTFT, ~90% cheaper input tokens).
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: [
-      {
-        type: 'text',
-        text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  const response = await client.messages.create(buildBriefingRequest(userPrompt));
 
   // If the model hit the output cap, the JSON is almost certainly truncated.
   // Surface a clear message instead of a misleading "Unterminated string" error.
-  if (response.stop_reason === 'max_tokens') {
-    throw new Error(
-      `Model response was truncated at max_tokens=${MAX_TOKENS}. ` +
-        `Raise MAX_TOKENS in src/lib/anthropic.js or reduce input size.`
-    );
-  }
+  assertNotTruncated(response);
 
   const text = extractText(response);
   const parsed = parseJson(text);
@@ -74,6 +57,63 @@ export async function generateBriefing(rows, { lang = 'en' } = {}) {
   logUsage(usage);
 
   return { briefing, usage };
+}
+
+/**
+ * Stream the same briefing JSON request, surfacing a renderable partial once
+ * the summary arrives while still validating the final response strictly.
+ */
+export async function generateBriefingStream(rows, { lang = 'en', onPartial } = {}) {
+  const client = getClient();
+  const targetLang = normalizeLanguage(lang);
+  const userPrompt = buildUserPrompt(rows, targetLang);
+  const stream = client.messages.stream(buildBriefingRequest(userPrompt));
+  let latestText = '';
+
+  stream.on('text', (_delta, textSnapshot) => {
+    latestText = textSnapshot;
+    const partial = parsePartialBriefing(latestText, targetLang);
+    if (partial) onPartial?.(partial);
+  });
+
+  const response = await stream.finalMessage();
+  assertNotTruncated(response);
+
+  const text = latestText || extractText(response);
+  const parsed = parseJson(text);
+  const briefing = validateBriefing(parsed);
+  briefing.language = targetLang;
+
+  const usage = response.usage ?? {};
+  logUsage(usage);
+
+  return { briefing, usage };
+}
+
+function buildBriefingRequest(userPrompt) {
+  // The stable system prompt is marked cache_control: ephemeral so subsequent
+  // calls reuse the cached prefix (lower TTFT, ~90% cheaper input tokens).
+  return {
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: [
+      {
+        type: 'text',
+        text: SYSTEM_PROMPT,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{ role: 'user', content: userPrompt }],
+  };
+}
+
+function assertNotTruncated(response) {
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(
+      `Model response was truncated at max_tokens=${MAX_TOKENS}. ` +
+        `Raise MAX_TOKENS in src/lib/anthropic.js or reduce input size.`
+    );
+  }
 }
 
 function extractText(response) {
@@ -90,6 +130,25 @@ function parseJson(text) {
     return JSON.parse(cleaned);
   } catch (err) {
     throw new Error(`Could not parse model response as JSON: ${err.message}`);
+  }
+}
+
+function parsePartialBriefing(text, targetLang) {
+  try {
+    const parsed = parsePartialJson(stripFences(text), Allow.STR | Allow.ARR | Allow.OBJ);
+    if (typeof parsed?.summary !== 'string' || !parsed.summary.trim()) return null;
+    return {
+      week_label: typeof parsed.week_label === 'string' ? parsed.week_label : '',
+      summary: parsed.summary,
+      top_growers: Array.isArray(parsed.top_growers) ? parsed.top_growers : [],
+      bottom_decliners: Array.isArray(parsed.bottom_decliners) ? parsed.bottom_decliners : [],
+      competitor_threats: Array.isArray(parsed.competitor_threats) ? parsed.competitor_threats : [],
+      promo_inefficiency: Array.isArray(parsed.promo_inefficiency) ? parsed.promo_inefficiency : [],
+      actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+      language: targetLang,
+    };
+  } catch {
+    return null;
   }
 }
 

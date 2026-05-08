@@ -1,101 +1,57 @@
-import { getClient } from './anthropic.js';
+import { MODEL, getClient } from './anthropic.js';
 
-const CHAT_MODEL = 'claude-sonnet-4-6';
-const CHAT_MAX_TOKENS = 1024;
+const CHAT_MAX_TOKENS = 900;
 
-function logUsage({
-  input_tokens = 0,
-  output_tokens = 0,
-  cache_creation_input_tokens = 0,
-  cache_read_input_tokens = 0,
-}) {
-  const INPUT_PER_M = 3.0;
-  const OUTPUT_PER_M = 15.0;
-  const CACHE_WRITE_PER_M = 3.75;
-  const CACHE_READ_PER_M = 0.3;
-  const cost =
-    (input_tokens * INPUT_PER_M +
-      output_tokens * OUTPUT_PER_M +
-      cache_creation_input_tokens * CACHE_WRITE_PER_M +
-      cache_read_input_tokens * CACHE_READ_PER_M) /
-    1_000_000;
-  console.info(
-    `[anthropic] in=${input_tokens} out=${output_tokens} ` +
-      `cache_w=${cache_creation_input_tokens} cache_r=${cache_read_input_tokens} ` +
-      `cost=$${cost.toFixed(4)}`
-  );
-}
+export async function streamBriefingChatAnswer({ briefing, question, onText }) {
+  if (!briefing) throw new Error('A completed briefing is required before chat can answer.');
+  const trimmedQuestion = question?.trim();
+  if (!trimmedQuestion) throw new Error('Question is required.');
 
-function buildChatSystemPrompt(briefing) {
-  const lang = briefing?.language === 'es' ? 'es' : 'en';
-  const json = JSON.stringify(briefing);
-
-  return [
-    `You answer questions about a weekly sales briefing. Ground truth is ONLY the JSON inside <briefing> below.`,
-    `Reply in ${lang === 'es' ? 'Colombian Spanish' : 'English'}.`,
-    `If the answer is not in that JSON, reply with one short polite sentence saying you do not have it in this briefing.`,
-    `Never invent accounts, numbers, regions, competitors, or metrics not present in the JSON.`,
-    `Format every reply for a glanceable chat bubble:`,
-    `- Whole reply under ~120 words. No preamble ("Based on the briefing…"), no filler.`,
-    `- Start with ONE short lead sentence (≤ ~20 words) that answers the question.`,
-    `- When listing two or more items, use bullets. Each bullet on its own line, starts with "- ", single short line (≤ ~18 words), account + hard number up front when applicable.`,
-    `- Prefer 2–5 bullets over a paragraph when listing.`,
-    `- Separate the lead sentence from the bullets with one blank line.`,
-    `- No markdown headings (#, ##). No bold or italics. No tables. No emojis.`,
-    ``,
-    `<briefing>`,
-    json,
-    `</briefing>`,
-  ].join('\n');
-}
-
-/**
- * Ask a follow-up question grounded strictly on the briefing JSON.
- *
- * @param {object} params
- * @param {object} params.briefing — validated briefing object (includes language)
- * @param {Array<{ role: 'user' | 'assistant', content: string }>} params.history
- * @param {string} params.question
- * @returns {Promise<string>}
- */
-export async function askBriefing({ briefing, history, question }) {
-  const client = getClient();
-  const system = buildChatSystemPrompt(briefing);
-
-  const anthropicMessages = [
-    ...history.map(({ role, content }) => ({ role, content })),
-    { role: 'user', content: question },
-  ];
-
-  // The system prompt embeds the full briefing JSON, which is identical across
-  // every turn in a session. Mark it cache_control: ephemeral so turn 2+ reuses
-  // the cached prefix (~70% lower TTFT, input billed at ~10%).
-  const response = await client.messages.create({
-    model: CHAT_MODEL,
+  const stream = getClient().messages.stream({
+    model: MODEL,
     max_tokens: CHAT_MAX_TOKENS,
     system: [
       {
         type: 'text',
-        text: system,
+        text: buildChatSystemPrompt(briefing),
         cache_control: { type: 'ephemeral' },
       },
     ],
-    messages: anthropicMessages,
+    messages: [
+      {
+        role: 'user',
+        content: `Question: ${trimmedQuestion}`,
+      },
+    ],
   });
 
-  const usage = response.usage ?? {};
-  logUsage(usage);
+  stream.on('text', (_delta, textSnapshot) => {
+    onText?.(textSnapshot);
+  });
 
-  const block = response.content?.find((b) => b.type === 'text');
-  const text = block?.text?.trim() ?? '';
-
+  const response = await stream.finalMessage();
   if (response.stop_reason === 'max_tokens') {
-    return text || '…';
+    throw new Error(`Chat answer was truncated at max_tokens=${CHAT_MAX_TOKENS}.`);
   }
+  return extractText(response);
+}
 
-  if (!text) {
-    throw new Error('Empty response from model.');
-  }
+function buildChatSystemPrompt(briefing) {
+  return `
+You answer follow-up questions about one executive sales briefing.
 
-  return text;
+Rules:
+- Use only the BRIEFING_JSON below as source material.
+- If the briefing does not contain the answer, say: "I don't see that in this briefing."
+- Keep answers concise: one short paragraph or up to three bullets.
+- Do not invent account details, raw CSV rows, or recommendations that are not in the briefing.
+
+BRIEFING_JSON:
+${JSON.stringify(briefing)}
+`.trim();
+}
+
+function extractText(response) {
+  const block = response.content?.find((b) => b.type === 'text');
+  return block?.text ?? '';
 }
