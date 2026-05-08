@@ -13,7 +13,7 @@ Goal: make the live demo feel fast while keeping upload -> preview -> generating
 - Stream with `client.messages.stream(...)`, the existing prompt/schema contract, and system `cache_control: { type: 'ephemeral' }`.
 - Accumulate text from `stream.on('text', ...)`; parse partial JSON opportunistically, then parse and validate the final briefing from the accumulated buffer.
 - Keep the `stop_reason === 'max_tokens'` guard and the cached fallback in `handleGenerate`.
-- Show a partial briefing only after a usable `summary` exists, then replace it with the final `briefing` on success.
+- Render each section as soon as it is partial-parseable; use placeholders until final validation succeeds.
 - Disable PDF export and hide briefing chat while briefing generation is still streaming.
 
 ## Keep It Small
